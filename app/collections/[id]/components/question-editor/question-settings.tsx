@@ -69,7 +69,7 @@ export function QuestionSettings({
 }: QuestionSettingsProps) {
     // State to store the correct answer text for text_answer type
     const [correctAnswerText, setCorrectAnswerText] = React.useState(
-        activeQuestion.correct_answer_text || ""
+        activeQuestion?.correct_answer_text || ""
     );
 
     // Update text answer when changing
@@ -82,7 +82,7 @@ export function QuestionSettings({
 
     // Helper function to render correct answer UI based on question type
     const renderCorrectAnswerUI = () => {
-        switch (activeQuestion.question_type) {
+        switch (activeQuestion?.question_type) {
             case "true_false":
                 return (
                     <div className="space-y-2 mt-4 p-4 bg-muted/30 rounded-md">

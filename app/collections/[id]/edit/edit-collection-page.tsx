@@ -1,73 +1,99 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Save, ArrowLeft, CheckCircle, XCircle, Monitor, Share2, AlignLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
-// Import components
-import { QuestionList } from "./components/question-editor/question-list";
-import { QuestionPreview } from "./components/question-editor/question-preview";
-import { QuestionSettings } from "./components/question-editor/question-settings";
+import {
+    getActivitiesByCollectionId,
+    getCollectionById,
+    getQuestionsByActivityId,
+    updateActivity,
+    saveQuestions
+} from "../components/mock-data";
 
-// Import types and mock data
-import { Activity, QuizQuestion } from "./components/types";
-import { MOCK_ACTIVITIES, MOCK_QUESTIONS } from "./components/mock-data";
+// Import the Question editor components
+import { QuestionList } from "../components/question-editor/question-list";
+import { QuestionPreview } from "../components/question-editor/question-preview";
+import { QuestionSettings } from "../components/question-editor/question-settings";
 
-export default function QuestionsPage({ params }: { params: { id: string } }) {
+export default function EditActivitiesPage({ params }: { params: { id: string } }) {
     const router = useRouter();
-    const activityId = params.id;
+    const collectionId = params.id;
+    const [collection, setCollection] = useState<any>(null);
+    const [activities, setActivities] = useState<any[]>([]);
+    const [currentActivityIndex, setCurrentActivityIndex] = useState(0);
 
-    const [activity, setActivity] = useState<Activity | null>(null);
-    const [questions, setQuestions] = useState<QuizQuestion[]>([]);
+    const [questions, setQuestions] = useState<any[]>([]);
     const [activeQuestionIndex, setActiveQuestionIndex] = useState(0);
     const [activeTab, setActiveTab] = useState("content");
     const [timeLimit, setTimeLimit] = useState(30); // seconds
     const [backgroundImage, setBackgroundImage] = useState("");
     const [previewMode, setPreviewMode] = useState(false);
 
+    // Load collection and all activities
     useEffect(() => {
-        // Using mock data for activity
-        const mockActivity = MOCK_ACTIVITIES.find(act => act.id === activityId);
+        const collectionData = getCollectionById(collectionId);
+        if (collectionData) {
+            setCollection(collectionData);
+            const activitiesData = getActivitiesByCollectionId(collectionId);
 
-        if (mockActivity) {
-            setActivity(mockActivity);
-        } else {
-            // If no matching activity in mock data, create a dummy one
-            setActivity({
-                id: activityId,
-                title: "New Activity",
-                collection_id: "1",
-                description: "This is a new activity",
-                is_published: false,
-                activity_type_id: "quiz"
-            });
+            if (activitiesData.length > 0) {
+                setActivities(activitiesData);
+
+                // Set timeLimit from the first activity if available
+                if (activitiesData[0].time_limit) {
+                    setTimeLimit(activitiesData[0].time_limit);
+                }
+
+                // Load questions for all activities in the collection
+                const activityQuestions = getQuestionsByActivityId(activitiesData[0].id);
+
+                if (activityQuestions.length > 0) {
+                    setQuestions(activityQuestions);
+                    setActiveQuestionIndex(0);
+                } else {
+                    // Create an empty question if none exist
+                    const emptyQuestion = createEmptyQuestion(activitiesData[0].id);
+                    setQuestions([emptyQuestion]);
+                }
+            }
         }
+    }, [collectionId]);
 
-        // Using mock data for questions
-        const mockQuestionsForActivity = MOCK_QUESTIONS[activityId as keyof typeof MOCK_QUESTIONS] || [];
+    // Update current activity based on the selected question
+    useEffect(() => {
+        if (questions.length > 0 && activeQuestionIndex >= 0 && activeQuestionIndex < questions.length) {
+            const currentQuestion = questions[activeQuestionIndex];
+            const activityId = currentQuestion.activity_id;
+            const activityIndex = activities.findIndex(a => a.id === activityId);
 
-        if (mockQuestionsForActivity.length > 0) {
-            setQuestions(mockQuestionsForActivity);
-        } else {
-            // Add an empty question if none exist
-            setQuestions([createEmptyQuestion()]);
+            if (activityIndex !== -1) {
+                setCurrentActivityIndex(activityIndex);
+
+                // Update timeLimit for the current activity
+                if (activities[activityIndex].time_limit) {
+                    setTimeLimit(activities[activityIndex].time_limit);
+                }
+            }
         }
-    }, [activityId]);
+    }, [activeQuestionIndex, questions, activities]);
 
-    const createEmptyQuestion = (): QuizQuestion => ({
+    const createEmptyQuestion = (activityId: string): any => ({
         activity_id: activityId,
         question_text: "",
         question_type: "multiple_choice",
-        correct_answer_text: "",
         options: [
             { option_text: "", is_correct: true, display_order: 0 },
             { option_text: "", is_correct: false, display_order: 1 },
             { option_text: "", is_correct: false, display_order: 2 },
             { option_text: "", is_correct: false, display_order: 3 }
-        ]
+        ],
+        explanation: ""
     });
+
     const handleSlideContentChange = (value: string) => {
         const updatedQuestions = [...questions];
         updatedQuestions[activeQuestionIndex] = {
@@ -77,7 +103,6 @@ export default function QuestionsPage({ params }: { params: { id: string } }) {
         setQuestions(updatedQuestions);
     };
 
-    // Add a handler for slide image changes
     const handleSlideImageChange = (value: string) => {
         const updatedQuestions = [...questions];
         updatedQuestions[activeQuestionIndex] = {
@@ -86,14 +111,13 @@ export default function QuestionsPage({ params }: { params: { id: string } }) {
         };
         setQuestions(updatedQuestions);
     };
-    const handleAddQuestion = (newQuestion?: QuizQuestion) => {
-        // If a newQuestion is provided (like a slide), use it
-        // Otherwise create an empty question with the default function
-        const questionToAdd = newQuestion || createEmptyQuestion();
 
+    const handleAddQuestion = (newQuestion?: any) => {
+        const questionToAdd = newQuestion || createEmptyQuestion(activities[currentActivityIndex]?.id || "");
         setQuestions([...questions, questionToAdd]);
         setActiveQuestionIndex(questions.length);
     };
+
     const handleDeleteQuestion = (index: number) => {
         if (questions.length <= 1) {
             return; // Don't delete the last question
@@ -107,6 +131,7 @@ export default function QuestionsPage({ params }: { params: { id: string } }) {
             setActiveQuestionIndex(updatedQuestions.length - 1);
         }
     };
+
     const handleQuestionTextChange = (value: string, questionIndex: number) => {
         const updatedQuestions = [...questions];
         updatedQuestions[questionIndex] = {
@@ -122,24 +147,11 @@ export default function QuestionsPage({ params }: { params: { id: string } }) {
         const questionType = updatedQuestions[questionIndex].question_type;
 
         if (field === 'is_correct' && value === true) {
-            // For true_false questions, ensure only one option is correct
-            if (questionType === 'true_false') {
-                options.forEach((option, i) => {
-                    // Set is_correct=true for the clicked option and false for all others
-                    options[i] = {
-                        ...option,
-                        is_correct: i === optionIndex
-                    };
-                });
-            }
-            // For multiple_choice questions, also ensure only one option is correct
-            else if (questionType === 'multiple_choice') {
+            if (questionType === 'true_false' || questionType === 'multiple_choice') {
                 options.forEach((option, i) => {
                     options[i] = { ...option, is_correct: i === optionIndex };
                 });
-            }
-            // For multiple_response, we allow multiple correct answers
-            else {
+            } else {
                 options[optionIndex] = { ...options[optionIndex], [field]: value };
             }
         } else {
@@ -153,29 +165,24 @@ export default function QuestionsPage({ params }: { params: { id: string } }) {
 
         setQuestions(updatedQuestions);
     };
+
     const handleQuestionTypeChange = (value: string) => {
         const updatedQuestions = [...questions];
         let options = [...updatedQuestions[activeQuestionIndex].options];
 
-        // Adjust options based on question type
         if (value === "true_false") {
-            // For true/false, we always set True as correct by default
             options = [
                 { option_text: "True", is_correct: true, display_order: 0 },
                 { option_text: "False", is_correct: false, display_order: 1 }
             ];
         } else if (value === "text_answer") {
-            // For text answer, we don't need options
             options = [];
         } else if (options.length < 2) {
-            // Ensure we have at least 2 options for multiple choice questions
             options = [
                 { option_text: "", is_correct: true, display_order: 0 },
                 { option_text: "", is_correct: false, display_order: 1 }
             ];
         } else if (value === "multiple_choice" && updatedQuestions[activeQuestionIndex].question_type === "multiple_response") {
-            // When switching from multiple response to single choice,
-            // ensure only one option is marked as correct
             let hasCorrect = false;
             options = options.map((option, idx) => {
                 if (option.is_correct && !hasCorrect) {
@@ -185,7 +192,6 @@ export default function QuestionsPage({ params }: { params: { id: string } }) {
                 return { ...option, is_correct: false };
             });
 
-            // If no correct option was found, set the first one as correct
             if (!hasCorrect && options.length > 0) {
                 options[0] = { ...options[0], is_correct: true };
             }
@@ -199,6 +205,7 @@ export default function QuestionsPage({ params }: { params: { id: string } }) {
 
         setQuestions(updatedQuestions);
     };
+
     const handleCorrectAnswerChange = (value: string) => {
         const updatedQuestions = [...questions];
         updatedQuestions[activeQuestionIndex] = {
@@ -224,14 +231,7 @@ export default function QuestionsPage({ params }: { params: { id: string } }) {
 
         setQuestions(updatedQuestions);
     };
-    const handleQuestionChange = (field: string, value: any) => {
-        const updatedQuestions = [...questions];
-        updatedQuestions[activeQuestionIndex] = {
-            ...updatedQuestions[activeQuestionIndex],
-            [field]: value
-        };
-        setQuestions(updatedQuestions);
-    };
+
     const handleDeleteOption = (index: number) => {
         if (questions[activeQuestionIndex].options.length <= 2) {
             return; // Don't delete if only 2 options remain
@@ -241,7 +241,6 @@ export default function QuestionsPage({ params }: { params: { id: string } }) {
         const options = [...updatedQuestions[activeQuestionIndex].options];
         options.splice(index, 1);
 
-        // Reorder the remaining options
         options.forEach((option, i) => {
             options[i] = { ...option, display_order: i };
         });
@@ -255,25 +254,34 @@ export default function QuestionsPage({ params }: { params: { id: string } }) {
     };
 
     const handleSave = async () => {
-        // Mock saving questions
-        console.log("Saving questions:", questions);
+        if (activities.length === 0) return;
 
-        // In a real app, you'd save the questions to your backend
-        // For development, just log the data and navigate
+        // Save all questions
+        saveQuestions(activities[0].id, questions);
 
-        setTimeout(() => {
-            // Simulate API delay
-            if (activity) {
-                // Navigate back to the collection page
-                router.push(`/collections/${activity.collection_id}`);
+        // Update all activities with their respective time limits
+        const activityIds = new Set(questions.map(q => q.activity_id));
+
+        activityIds.forEach(activityId => {
+            if (activityId) {
+                updateActivity(activityId as string, {
+                    is_published: true,
+                    updated_at: new Date().toISOString(),
+                    time_limit: timeLimit
+                });
             }
+        });
+
+        // Redirect to detail page after saving
+        setTimeout(() => {
+            router.push(`/collections/${collectionId}`);
         }, 500);
     };
 
     const activeQuestion = questions[activeQuestionIndex];
+    const currentActivity = activities[currentActivityIndex];
 
-    if (!activity) {
-        // Enhanced loading state
+    if (!collection || activities.length === 0) {
         return (
             <div className="container mx-auto py-8 flex items-center justify-center min-h-[60vh]">
                 <div className="flex flex-col items-center">
@@ -288,14 +296,14 @@ export default function QuestionsPage({ params }: { params: { id: string } }) {
         "multiple_choice": <CheckCircle className="h-4 w-4 mr-2" />,
         "multiple_response": <CheckCircle className="h-4 w-4 mr-2" />,
         "true_false": <XCircle className="h-4 w-4 mr-2" />,
-        "text_answer": <AlignLeft className="h-4 w-4 mr-2" />  // Add text answer icon
+        "text_answer": <AlignLeft className="h-4 w-4 mr-2" />
     };
 
     const questionTypeLabels = {
-        "multiple_choice": "Single Choice",    // Changed label to match question-settings.tsx
-        "multiple_response": "Multiple Choice", // Changed label to match question-settings.tsx
+        "multiple_choice": "Single Choice",
+        "multiple_response": "Multiple Choice",
         "true_false": "True/False",
-        "text_answer": "Text Answer"           // Add text answer label
+        "text_answer": "Text Answer"
     };
 
     return (
@@ -305,15 +313,15 @@ export default function QuestionsPage({ params }: { params: { id: string } }) {
                     <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => router.push(`/collections/${activity.collection_id}`)}
+                        onClick={() => router.push(`/collections/${collection.id}`)}
                         className="mr-2"
                     >
                         <ArrowLeft className="h-5 w-5" />
                     </Button>
                     <div>
-                        <h1 className="text-2xl font-bold">{activity.title}</h1>
+                        <h1 className="text-2xl font-bold">{collection.title}</h1>
                         <p className="text-sm text-muted-foreground">
-                            Question {activeQuestionIndex + 1} of {questions.length}
+                            {currentActivity ? `Editing: ${currentActivity.title}` : "Edit Collection"}
                         </p>
                     </div>
                 </div>
@@ -326,7 +334,7 @@ export default function QuestionsPage({ params }: { params: { id: string } }) {
                                 </Button>
                             </TooltipTrigger>
                             <TooltipContent>
-                                <p>Share quiz with others</p>
+                                <p>Share collection with others</p>
                             </TooltipContent>
                         </Tooltip>
                     </TooltipProvider>
@@ -336,13 +344,12 @@ export default function QuestionsPage({ params }: { params: { id: string } }) {
                     </Button>
 
                     <Button onClick={handleSave} className="bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 text-white border-none">
-                        <Save className="mr-2 h-4 w-4" /> Save Questions
+                        <Save className="mr-2 h-4 w-4" /> Save Collection
                     </Button>
                 </div>
             </div>
 
             <div className="grid grid-cols-12 gap-4">
-                {/* Left sidebar - Questions list - make smaller */}
                 <div className="col-span-12 md:col-span-2">
                     <QuestionList
                         questions={questions}
@@ -353,8 +360,7 @@ export default function QuestionsPage({ params }: { params: { id: string } }) {
                     />
                 </div>
 
-                {/* Main content area - make larger */}
-                <div className="col-span-12 md:col-span-8">
+                <div className="col-span-12 md:col-span-7">
                     {activeQuestion && (
                         <QuestionPreview
                             questions={questions}
@@ -369,8 +375,7 @@ export default function QuestionsPage({ params }: { params: { id: string } }) {
                     )}
                 </div>
 
-                {/* Right sidebar - Settings - make smaller */}
-                <div className="col-span-12 md:col-span-2">
+                <div className="col-span-12 md:col-span-3">
                     <QuestionSettings
                         activeQuestion={activeQuestion}
                         activeQuestionIndex={activeQuestionIndex}
