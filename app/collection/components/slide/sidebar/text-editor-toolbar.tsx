@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Bold,
   Italic,
@@ -9,6 +9,7 @@ import {
   AlignCenter,
   AlignRight,
   AlignJustify,
+  Plus,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -36,23 +37,29 @@ export function TextEditorToolbar() {
     underline: false,
     alignment: 'left',
   });
+
+  // lắng nghe format-change từ canvas
+  useEffect(() => {
+    const handler = (e: CustomEvent<any>) => {
+      console.log('got format:', e.detail);
+      setFormatting(e.detail);
+    };
+    window.addEventListener('toolbar:format-change', handler as EventListener);
+    return () => {
+      window.removeEventListener(
+        'toolbar:format-change',
+        handler as EventListener
+      );
+    };
+  }, []);
+
   const [selectedSize, setSelectedSize] = useState<string>('16');
   const [selectedFont, setSelectedFont] = useState<string>('Roboto');
 
-  const toggleFormat = (format: keyof typeof formatting) => {
-    if (format === 'alignment') return;
-    setFormatting((prev) => ({
-      ...prev,
-      [format]: !prev[format],
-    }));
-  };
+  const toggleFormat = (format: 'bold' | 'italic' | 'underline') =>
+    dispatchStyle(format);
 
-  const setAlignment = (alignment: string) => {
-    setFormatting((prev) => ({
-      ...prev,
-      alignment,
-    }));
-  };
+  const setAlignment = (alignment: string) => dispatchAlign(alignment);
 
   const dispatchStyle = (style: 'bold' | 'italic' | 'underline') => {
     window.dispatchEvent(
@@ -66,7 +73,7 @@ export function TextEditorToolbar() {
     setSelectedSize(value);
     window.dispatchEvent(
       new CustomEvent('fabric:font-size', {
-        detail: { size: parseInt(value) },
+        detail: { size: Number.parseInt(value) },
       })
     );
   };
@@ -86,6 +93,11 @@ export function TextEditorToolbar() {
         detail: { align },
       })
     );
+  };
+
+  console.log('bold', formatting.bold);
+  const handleAddTextbox = () => {
+    window.dispatchEvent(new CustomEvent('fabric:add-textbox'));
   };
 
   const fontSizes = [
@@ -125,6 +137,17 @@ export function TextEditorToolbar() {
 
   return (
     <div className="flex flex-wrap items-center gap-1 rounded-md border bg-background p-1 shadow-sm">
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={handleAddTextbox}
+        className="h-8 w-8"
+      >
+        <Plus className="h-4 w-4" />
+        <span className="sr-only">Add Textbox</span>
+      </Button>
+      <Separator orientation="vertical" className="mx-1 h-6" />
+
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="ghost" className="h-8 px-3 text-sm">
@@ -154,10 +177,7 @@ export function TextEditorToolbar() {
           <SelectGroup>
             <SelectLabel>Font Size</SelectLabel>
             {fontSizes.map((size) => (
-              <SelectItem
-                key={size}
-                value={size}
-              >
+              <SelectItem key={size} value={size}>
                 {size}
               </SelectItem>
             ))}
@@ -171,10 +191,12 @@ export function TextEditorToolbar() {
         <Button
           variant={formatting.bold ? 'secondary' : 'ghost'}
           size="icon"
-          className="h-8 w-8"
-          onClick={() => {
-            toggleFormat('bold'), dispatchStyle('bold');
-          }}
+          className={`
+    h-8 w-8  
+    ${formatting.bold ? 'bg-violet-500/10 text-violet-600' : 'bg-transparent'}
+    flex items-center justify-center
+  `}
+          onClick={() => toggleFormat('bold')}
         >
           <Bold className="h-4 w-4" />
           <span className="sr-only">Bold</span>
@@ -182,10 +204,13 @@ export function TextEditorToolbar() {
         <Button
           variant={formatting.italic ? 'secondary' : 'ghost'}
           size="icon"
-          className="h-8 w-8"
-          onClick={() => {
-            toggleFormat('italic'), dispatchStyle('italic');
-          }}
+          className={`h-8 w-8  ${
+            formatting.italic
+              ? 'bg-violet-500/10 text-violet-600'
+              : 'bg-transparent'
+          }
+    flex items-center justify-center `}
+          onClick={() => toggleFormat('italic')}
         >
           <Italic className="h-4 w-4" />
           <span className="sr-only">Italic</span>
@@ -193,10 +218,12 @@ export function TextEditorToolbar() {
         <Button
           variant={formatting.underline ? 'secondary' : 'ghost'}
           size="icon"
-          className="h-8 w-8"
-          onClick={() => {
-            toggleFormat('underline'), dispatchStyle('underline');
-          }}
+          className={`
+    h-8 w-8  
+    ${formatting.underline ? 'bg-violet-500/10 text-violet-600' : 'bg-transparent'}
+    flex items-center justify-center
+  `}
+          onClick={() => toggleFormat('underline')}
         >
           <Underline className="h-4 w-4" />
           <span className="sr-only">Underline</span>
