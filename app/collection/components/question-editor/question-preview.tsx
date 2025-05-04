@@ -180,8 +180,6 @@ export function QuestionPreview({
     });
   };
 
-  const activeQuestion = questions[activeQuestionIndex];
-  console.log("activeQuestion", )
   return (
     <motion.div
       className="flex flex-col h-full space-y-4 w-full"

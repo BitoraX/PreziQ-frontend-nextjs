@@ -1,6 +1,11 @@
 import * as fabric from 'fabric';
+import { FabricImage } from 'fabric';
 import { createGradientFill } from './fabricHelpers';
 import WebFont from 'webfontloader';
+import { slidesApi } from '@/api-client/slides-api';
+import type { SlideElementPayload } from '@/types/slideInterface';
+
+const HARD_SLIDE_ID = '0958e658-62ff-4117-9617-78c6798316c1';
 
 type StyleObj = Partial<{
   fontWeight: string;
@@ -14,18 +19,72 @@ export const ToolbarHandlers = (
   content: fabric.Textbox
 ) => {
   const addTextbox = () => {
+    console.log('Bắt đầu addTextbox');
     const textbox = new fabric.Textbox('New Text', {
-      left: 150,
+      left: 50,
       top: 250,
       fontSize: 20,
       width: 300,
       fill: '#000000',
       fontFamily: 'Arial',
     });
+    textbox.set('isNew', true);
+    canvas.set('isCreating', true);
+
+    console.log('Thêm textbox vào canvas');
     canvas.add(textbox);
     canvas.setActiveObject(textbox);
     canvas.renderAll();
+
+    const cw = canvas.getWidth();
+    const ch = canvas.getHeight();
+    const w = textbox.getScaledWidth();
+    const h = textbox.getScaledHeight();
+
+    const payload: SlideElementPayload = {
+      positionX: (textbox.left! / cw) * 100,
+      positionY: (textbox.top! / ch) * 100,
+      width: (w / cw) * 100,
+      height: (h / ch) * 100,
+      rotation: textbox.angle || 0,
+      layerOrder: (textbox.get('layerOrder') as number) || 0,
+      slideElementType: 'TEXT',
+      content: textbox.text || '',
+    };
+
+    console.log('Gửi API addSlidesElement');
+    slidesApi
+      .addSlidesElement(HARD_SLIDE_ID, payload)
+      .then((res) => {
+        console.log('API addSlidesElement thành công:', res.data);
+        textbox.set('isNew', false);
+        textbox.set('slideElementId', res.data.data.slideElementId);
+        canvas.set('isCreating', false);
+      })
+      .catch((err) => {
+        console.error('Lỗi khi tạo text element:', err);
+        canvas.set('isCreating', false);
+      });
   };
+
+
+  function onAddImage(e: Event) {
+    // cast to your custom shape
+    const ev = e as CustomEvent<{ url: string }>;
+    const { url } = ev.detail;
+
+    // now you can use async, but not on the listener itself
+    FabricImage.fromURL(url, { crossOrigin: 'anonymous' })
+      .then((img) => {
+        img.set({ left: 100, top: 100, scaleX: 0.5, scaleY: 0.5 });
+        canvas.add(img);
+        canvas.setActiveObject(img);
+        canvas.requestRenderAll();
+      })
+      .catch((err) => {
+        console.error('Failed to load image:', err);
+      });
+  }
 
   const addShape = (shape: 'rect' | 'circle' | 'triangle' | 'arrow') => {
     let obj: fabric.Object;
@@ -88,20 +147,32 @@ export const ToolbarHandlers = (
     canvas.requestRenderAll();
   }
 
-  function removeStyleProperty(textbox: fabric.Textbox, prop: string) {
+  function removeStyleProperty(textbox: fabric.Textbox, prop: keyof StyleObj) {
+    // nếu chưa có styles thì thôi
     if (!textbox.styles) return;
-    for (const lineIndex in textbox.styles) {
-      for (const charIndex in textbox.styles[lineIndex]) {
-        delete textbox.styles[lineIndex][charIndex][prop];
-        if (Object.keys(textbox.styles[lineIndex][charIndex]).length === 0) {
-          delete textbox.styles[lineIndex][charIndex];
+
+    // ép kiểu để có index signature
+    const styles = textbox.styles as unknown as Record<
+      string,
+      Record<string, any>
+    >;
+
+    for (const lineIndex in styles) {
+      const line = styles[lineIndex];
+      for (const charIndex in line) {
+        const charStyles = line[charIndex];
+        delete charStyles[prop];
+        if (Object.keys(charStyles).length === 0) {
+          delete line[charIndex];
         }
       }
-      if (Object.keys(textbox.styles[lineIndex]).length === 0) {
-        delete textbox.styles[lineIndex];
+      if (Object.keys(line).length === 0) {
+        delete styles[lineIndex];
       }
     }
 
+    // gán lại (ép kiểu ngược) để Fabric nhìn thấy changes
+    textbox.styles = styles as any;
     textbox.dirty = true;
   }
 
@@ -361,7 +432,24 @@ export const ToolbarHandlers = (
   canvas.on('text:editing:entered', () => emitFormatState());
   canvas.on('text:editing:exited', () => emitFormatState());
 
-  window.addEventListener('fabric:add-textbox', addTextbox);
+  let isAddingTextbox = false;
+  const debouncedAddTextbox = () => {
+    if (isAddingTextbox) {
+      console.log('Bỏ qua fabric:add-textbox vì đang xử lý');
+      return;
+    }
+    isAddingTextbox = true;
+    console.log('Sự kiện fabric:add-textbox được kích hoạt');
+    addTextbox();
+    setTimeout(() => {
+      isAddingTextbox = false;
+    }, 500); // Đợi 500ms trước khi cho phép gọi lại
+  };
+
+  window.addEventListener('fabric:add-textbox', debouncedAddTextbox);
+
+  //window.addEventListener('fabric:add-textbox', addTextbox);
+  window.addEventListener('fabric:add-image', onAddImage);
   window.addEventListener(
     'fabric:toggle-style',
     handleToggleStyle as EventListener

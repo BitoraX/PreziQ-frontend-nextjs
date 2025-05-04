@@ -7,12 +7,12 @@ interface BaseSlideElementPayload {
   rotation: number;
   layerOrder: number;
 
-  entryAnimation?: string;
-  entryAnimationDuration?: number;
-  entryAnimationDelay?: number;
-  exitAnimation?: string;
-  exitAnimationDuration?: number;
-  exitAnimationDelay?: number;
+  entryAnimation?: string | null;
+  entryAnimationDuration?: number | null;
+  entryAnimationDelay?: number | null;
+  exitAnimation?: string | null;
+  exitAnimationDuration?: number | null;
+  exitAnimationDelay?: number | null;
 }
 
 export type SlideElementPayload = BaseSlideElementPayload &
