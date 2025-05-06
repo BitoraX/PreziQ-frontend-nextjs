@@ -8,8 +8,9 @@ import { ToolbarHandlers } from './useToolbarHandlers';
 import { EditorContextMenu } from '../sidebar/editor-context-menu';
 import { slidesApi } from '@/api-client/slides-api';
 import type { SlideElementPayload } from '@/types/slideInterface';
+import { debounce } from 'lodash';
 
-const HARD_SLIDE_ID = '0958e658-62ff-4117-9617-78c6798316c1';
+const HARD_SLIDE_ID = '2eb14abc-2a04-4439-bb8c-cba17889a0fb';
 const HARD_ELEMENT_ID = 'a7c1c8de-cc1b-4aca-9db8-44c69bd13e9b';
 
 export interface FabricEditorProps {
@@ -18,6 +19,8 @@ export interface FabricEditorProps {
   onUpdate: (data: { title: string; content: string }) => void;
   backgroundColor?: string;
   width?: number;
+  height?: number;
+  zoom?: number;
 }
 
 const FabricEditor: React.FC<FabricEditorProps> = ({
@@ -25,11 +28,78 @@ const FabricEditor: React.FC<FabricEditorProps> = ({
   slideContent,
   onUpdate,
   backgroundColor,
-  width = 1024,
+  width,
+  height = 460,
+  zoom = 0.85,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const { fabricCanvas, initCanvas } = useFabricCanvas();
+
+  // Hàm chung để cập nhật slide element
+  const updateSlideElement = debounce((obj: fabric.Object) => {
+    if (!obj || (obj.type !== 'image' && obj.type !== 'textbox')) return;
+
+    const slideElementId = obj.get('slideElementId');
+    if (!slideElementId) return;
+
+    const canvas = fabricCanvas.current; // Giả sử fabricCanvas là ref của canvas
+    if (!canvas) return;
+
+    // const cw = canvas.getWidth() / canvas.getZoom(); // Kích thước gốc
+    // const ch = canvas.getHeight() / canvas.getZoom(); // Kích thước gốc
+    // const w = obj.getScaledWidth() / canvas.getZoom();
+    // const h = obj.getScaledHeight() / canvas.getZoom();
+
+    const cw = canvas.getWidth()!; // backstore width thực
+    const ch = canvas.getHeight()!; // backstore height thực
+
+    // 1) Lấy bounding-box "thô" (chưa scale)
+    const rawW = obj.width!;
+    const rawH = obj.height!;
+
+    const base = {
+      positionX: (obj.left! / cw) * 100,
+      positionY: (obj.top! / ch) * 100,
+      width: (rawW  / cw) * 100,
+      height: (rawH  / ch) * 100,
+      rotation: obj.angle || 0,
+      layerOrder: canvas.getObjects().indexOf(obj),
+    };
+
+    // console.log('Calculated dimensions for SlideElement:', {
+    //   width: (w / cw) * 100,
+    //   height: (h / ch) * 100,
+    // });
+
+    let payload: SlideElementPayload;
+
+    if (obj.type === 'textbox') {
+      const fullTextbox = obj.toJSON();
+      payload = {
+        ...base,
+        slideElementType: 'TEXT',
+        content: JSON.stringify(fullTextbox),
+      };
+    } else if (obj.type === 'image') {
+      payload = {
+        ...base,
+        slideElementType: 'IMAGE',
+        sourceUrl: obj.get('sourceUrl') || (obj as fabric.FabricImage).getSrc(), // Lấy URL của ảnh
+      };
+    } else {
+      return;
+    }
+
+    slidesApi
+      .updateSlidesElement(HARD_SLIDE_ID, slideElementId, payload)
+      .then((res) => {
+        console.log('Cập nhật element thành công', res.data);
+      })
+      .catch((err) => {
+        console.error('Lỗi cập nhật element', err);
+      });
+  }, 500); // Debounce trong 300ms
 
   useEffect(() => {
     if (!canvasRef.current) return;
@@ -39,8 +109,10 @@ const FabricEditor: React.FC<FabricEditorProps> = ({
       backgroundColor || '#fff',
       width
     );
+    canvas.setDimensions({ width: width, height: height }); // <-- set chiều cao gốc
+    canvas.setZoom(zoom); // <-- scale giống Canva Editor
     const { title, content } = initFabricEvents(canvas, onUpdate);
-    ToolbarHandlers(canvas, title, content);
+    const cleanupToolbar = ToolbarHandlers(canvas, title, content);
 
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
@@ -86,73 +158,56 @@ const FabricEditor: React.FC<FabricEditorProps> = ({
       }
     });
 
-    //Sự kiện khi đối tượng được thay đổi
+    // Sự kiện khi đối tượng được thay đổi (di chuyển, thay đổi kích thước, xoay, v.v.)
     canvas.on('object:modified', (e) => {
       const obj = e.target;
-      // if (obj) {
-      //   console.log('Đối tượng vừa được thay đổi:');
-      //   console.log(JSON.stringify(obj.toJSON(), null, 2));
-      //   //console.log(obj)
-      // }
+      if (!obj) return;
 
-      if (obj.type !== 'image' && obj.type !== 'textbox') return;
+      console.log('Đối tượng vừa được thay đổi:');
+      console.log(JSON.stringify(obj.toJSON(), null, 2));
 
       const isNew = obj.get('isNew');
-      const slideElementId = obj.get('slideElementId');
       const isCreating = canvas.get('isCreating');
 
-      // nếu chưa có elementId ⇒ không phải element từ server ⇒ bỏ qua
-      //if (!elementId) return;
-
-      // nếu vừa tạo xong, flag isNew==true ⇒ chỉ reset flag, không gọi update
-      if (isNew || isCreating || !slideElementId) {
+      // Nếu vừa tạo xong hoặc đang tạo, không gọi update
+      if (isNew || isCreating) {
         if (isNew) {
           obj.set('isNew', false);
         }
         return;
       }
 
-      const cw = canvas.getWidth()!;
-      const ch = canvas.getHeight()!;
-      const w = obj.getScaledWidth();
-      const h = obj.getScaledHeight();
-      const base = {
-        positionX: (obj.left! / cw) * 100,
-        positionY: (obj.top! / ch) * 100,
-        width: (w / cw) * 100,
-        height: (h / ch) * 100,
-        rotation: obj.angle || 0,
-        layerOrder: canvas.getObjects().indexOf(obj),
-      };
+      updateSlideElement(obj);
+    });
 
-      let payload: SlideElementPayload;
+    // Sự kiện khi nội dung văn bản thay đổi
+    canvas.on('text:changed', (e) => {
+      const obj = e.target as fabric.Textbox;
+      if (!obj || obj.type !== 'textbox') return;
 
-      if (obj.type === 'image') {
-        // Trường hợp IMAGE
-        payload = {
-          ...base,
-          slideElementType: 'IMAGE',
-          sourceUrl: (obj as fabric.Image).getSrc(), // lấy src từ FabricImage
-        };
-      } else if (obj.type === 'textbox') {
-        // Trường hợp TEXT
-        payload = {
-          ...base,
-          slideElementType: 'TEXT',
-          content: (obj as fabric.Textbox).text || '',
-        };
-      } else {
-        return; // không phải 2 type trên thì thôi
-      }
+      console.log('Text changed:', obj.toJSON());
 
-      slidesApi
-        .updateSlidesElement(HARD_SLIDE_ID, slideElementId, payload)
-        .then((res) => {
-          console.log('Cập nhật element thành công', res.data);
-        })
-        .catch((err) => {
-          console.error('Lỗi cập nhật element', err);
-        });
+      updateSlideElement(obj);
+    });
+
+    // Sự kiện khi kiểu dáng hoặc  thay đổi (bold, italic, underline, v.v.)
+    canvas.on('text:selection:changed', (e) => {
+      const obj = e.target as fabric.Textbox;
+      if (!obj || obj.type !== 'textbox') return;
+
+      console.log('Text selection changed:', obj.toJSON());
+
+      updateSlideElement(obj);
+    });
+
+    // Sự kiện khi thoát chế độ chỉnh sửa
+    canvas.on('text:editing:exited', (e) => {
+      const obj = e.target as fabric.Textbox;
+      if (!obj || obj.type !== 'textbox') return;
+
+      console.log('Text editing exited:', obj.toJSON());
+
+      updateSlideElement(obj);
     });
 
     // Ngăn Fabric.js chèn URL vào textbox nhưng không chặn sự kiện hoàn toàn
@@ -168,10 +223,11 @@ const FabricEditor: React.FC<FabricEditorProps> = ({
     document.addEventListener('keydown', handleKeyDown);
 
     return () => {
+      cleanupToolbar();
       canvas.dispose();
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [backgroundColor, width]);
+  }, [backgroundColor, width, height, zoom]);
 
   useEffect(() => {
     const handleDragStart = () => {
@@ -291,16 +347,9 @@ const FabricEditor: React.FC<FabricEditorProps> = ({
         width: (w / cw) * 100,
         height: (h / ch) * 100,
         rotation: img.angle || 0,
-        layerOrder: canvas.getObjects().indexOf(img), // hoặc lấy layerOrder tuỳ bạn
+        layerOrder: canvas.getObjects().indexOf(img),
         slideElementType: 'IMAGE',
         sourceUrl: url,
-        // các trường animation tạm null
-        // entryAnimation: null,
-        // entryAnimationDuration: null,
-        // entryAnimationDelay: null,
-        // exitAnimation: null,
-        // exitAnimationDuration: null,
-        // exitAnimationDelay: null,
       };
       slidesApi
         .addSlidesElement(HARD_SLIDE_ID, payload)
@@ -322,7 +371,13 @@ const FabricEditor: React.FC<FabricEditorProps> = ({
         ref={containerRef}
         onDrop={handleDrop}
         onDragOver={(e) => e.preventDefault()}
-        className="relative w-full max-w-3xl h-full"
+        style={{
+          position: 'relative',
+          width: `${width}px`, // px gốc
+          height: `${height}px`, // px gốc
+          overflow: 'hidden', // zoom edit
+          transformOrigin: 'top left',
+        }}
       >
         <canvas ref={canvasRef} />
       </div>

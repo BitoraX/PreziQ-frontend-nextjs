@@ -316,7 +316,7 @@ export function QuestionPreview({
                     questionIndex === activeQuestionIndex
                       ? 'ring-2 ring-primary/20 scale-100'
                       : 'scale-[0.98] opacity-90 hover:opacity-100 hover:scale-[0.99]',
-                    viewMode === 'desktop' && 'max-w-4xl',
+                    viewMode === 'desktop' && 'w-[812px]',
                     viewMode === 'tablet' && 'max-w-2xl',
                     viewMode === 'mobile' && 'max-w-sm'
                   )}
@@ -341,10 +341,10 @@ export function QuestionPreview({
                       }}
                       width={
                         viewMode === 'desktop'
-                          ? 1024
+                          ? 812
                           : viewMode === 'tablet'
-                          ? 768
-                          : 375
+                          ? 672
+                          : 384
                       }
                       backgroundColor="transparent"
                       // onImageDrop={(url) => {

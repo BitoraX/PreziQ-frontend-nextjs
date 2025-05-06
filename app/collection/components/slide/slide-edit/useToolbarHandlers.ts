@@ -4,8 +4,9 @@ import { createGradientFill } from './fabricHelpers';
 import WebFont from 'webfontloader';
 import { slidesApi } from '@/api-client/slides-api';
 import type { SlideElementPayload } from '@/types/slideInterface';
+import { useEffect } from 'react';
 
-const HARD_SLIDE_ID = '0958e658-62ff-4117-9617-78c6798316c1';
+const HARD_SLIDE_ID = '2eb14abc-2a04-4439-bb8c-cba17889a0fb';
 
 type StyleObj = Partial<{
   fontWeight: string;
@@ -20,6 +21,11 @@ export const ToolbarHandlers = (
 ) => {
   const addTextbox = () => {
     console.log('Bắt đầu addTextbox');
+    if (canvas.get('isCreating')) {
+      console.log('Bỏ qua addTextbox vì đang tạo');
+      return;
+    }
+    canvas.set('isCreating', true);
     const textbox = new fabric.Textbox('New Text', {
       left: 50,
       top: 250,
@@ -29,7 +35,6 @@ export const ToolbarHandlers = (
       fontFamily: 'Arial',
     });
     textbox.set('isNew', true);
-    canvas.set('isCreating', true);
 
     console.log('Thêm textbox vào canvas');
     canvas.add(textbox);
@@ -49,7 +54,7 @@ export const ToolbarHandlers = (
       rotation: textbox.angle || 0,
       layerOrder: (textbox.get('layerOrder') as number) || 0,
       slideElementType: 'TEXT',
-      content: textbox.text || '',
+      content: JSON.stringify(textbox.toJSON()),
     };
 
     console.log('Gửi API addSlidesElement');
@@ -59,14 +64,16 @@ export const ToolbarHandlers = (
         console.log('API addSlidesElement thành công:', res.data);
         textbox.set('isNew', false);
         textbox.set('slideElementId', res.data.data.slideElementId);
-        canvas.set('isCreating', false);
       })
       .catch((err) => {
         console.error('Lỗi khi tạo text element:', err);
+        canvas.remove(textbox);
+        canvas.renderAll();
+      })
+      .finally(() => {
         canvas.set('isCreating', false);
       });
   };
-
 
   function onAddImage(e: Event) {
     // cast to your custom shape
@@ -147,7 +154,10 @@ export const ToolbarHandlers = (
     canvas.requestRenderAll();
   }
 
-  function removeStyleProperty(textbox: fabric.Textbox, prop: keyof StyleObj) {
+  function removeStyleProperty(
+    textbox: fabric.Textbox,
+    prop: keyof StyleObj | 'fill'
+  ) {
     // nếu chưa có styles thì thôi
     if (!textbox.styles) return;
 
@@ -185,6 +195,7 @@ export const ToolbarHandlers = (
       applyStyleToSelection(textbox, 'fill', e.detail.color);
     } else {
       textbox.set('fill', e.detail.color);
+       removeStyleProperty(textbox, 'fill');
       textbox.dirty = true;
       canvas.requestRenderAll();
     }
@@ -433,35 +444,56 @@ export const ToolbarHandlers = (
   canvas.on('text:editing:exited', () => emitFormatState());
 
   let isAddingTextbox = false;
+  let textboxAddTimeout: NodeJS.Timeout | null = null;
+
   const debouncedAddTextbox = () => {
     if (isAddingTextbox) {
       console.log('Bỏ qua fabric:add-textbox vì đang xử lý');
       return;
     }
+
     isAddingTextbox = true;
+
+    // Xóa timeout cũ nếu có
+    if (textboxAddTimeout) {
+      clearTimeout(textboxAddTimeout);
+    }
+
     console.log('Sự kiện fabric:add-textbox được kích hoạt');
     addTextbox();
-    setTimeout(() => {
+
+    textboxAddTimeout = setTimeout(() => {
       isAddingTextbox = false;
-    }, 500); // Đợi 500ms trước khi cho phép gọi lại
+      textboxAddTimeout = null;
+    }, 500);
   };
 
-  window.addEventListener('fabric:add-textbox', debouncedAddTextbox);
+
+    // 1️⃣ Register listener đúng một lần khi canvas thay đổi
+    window.addEventListener('fabric:add-textbox', debouncedAddTextbox);
+    window.addEventListener(
+      'fabric:toggle-style',
+      handleToggleStyle as EventListener
+    );
+    window.addEventListener(
+      'fabric:font-size',
+      handleFontSizeChange as EventListener
+    );
+    window.addEventListener(
+      'fabric:font-family',
+      handleFontFamilyChange as EventListener
+    );
+    window.addEventListener('fabric:change-color', changeColor as EventListener);
+    window.addEventListener('fabric:change-align', changeAlign as EventListener);
+
+    return () => {
+      // 2️⃣ Cleanup: remove listener khi component unmount hoặc canvas thay đổi
+      window.removeEventListener('fabric:add-textbox', debouncedAddTextbox);
+    };
 
   //window.addEventListener('fabric:add-textbox', addTextbox);
   window.addEventListener('fabric:add-image', onAddImage);
-  window.addEventListener(
-    'fabric:toggle-style',
-    handleToggleStyle as EventListener
-  );
-  window.addEventListener(
-    'fabric:font-size',
-    handleFontSizeChange as EventListener
-  );
-  window.addEventListener(
-    'fabric:font-family',
-    handleFontFamilyChange as EventListener
-  );
+  
   window.addEventListener('fabric:arrange', (e: Event) => {
     const { action } = (e as CustomEvent<{ action: string }>).detail;
     arrangeObject(action as any);
@@ -470,8 +502,7 @@ export const ToolbarHandlers = (
   window.addEventListener('fabric:add-circle', () => addShape('circle'));
   window.addEventListener('fabric:add-triangle', () => addShape('triangle'));
   window.addEventListener('fabric:add-arrow', () => addShape('arrow'));
-  window.addEventListener('fabric:change-color', changeColor as EventListener);
-  window.addEventListener('fabric:change-align', changeAlign as EventListener);
+
   window.addEventListener('fabric:group', groupObjects);
   window.addEventListener('fabric:ungroup', ungroupObjects);
   window.addEventListener('fabric:clear', clearCanvas);
