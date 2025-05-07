@@ -1,315 +1,245 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
-import Image from 'next/image';
+import React, { useEffect, useRef, useState } from 'react';
+import * as fabric from 'fabric';
 
-export type SlideElement = {
+interface SlideElement {
   slideElementId: string;
-  slideElementType: 'TEXT' | 'IMAGE';
-  positionX: number; // %
-  positionY: number; // %
-  width: number; // %
-  height: number; // %
-  rotation: number; // deg
+  slideElementType: 'IMAGE' | 'TEXT';
+  positionX: number;
+  positionY: number;
+  width: number;
+  height: number;
+  rotation: number;
   layerOrder: number;
   content: string | null;
   sourceUrl: string | null;
-};
+}
 
-export type Slide = {
+interface Slide {
   slideId: string;
   transitionEffect: string | null;
   transitionDuration: number;
   autoAdvanceSeconds: number;
   slideElements: SlideElement[];
-};
-
-export type Activity = {
-  activityId: string;
-  backgroundColor: string;
-  backgroundImage: string | null;
-  slide: Slide;
-};
-
-export type CollectionData = {
-  collectionId: string;
-  title: string;
-  description: string;
-  coverImage: string;
-  activities: Activity[];
-};
-
-interface SlideShowProps {
-  collection: CollectionData;
 }
 
-const SlideShow: React.FC<SlideShowProps> = ({ collection }) => {
-  // Original canvas dimensions - must match editor exactly
-  const canvasW = 812;
-  const canvasH = 460;
+export interface Activity {
+  activityId: string;
+  activityType: string;
+  title: string;
+  description: string;
+  isPublished: boolean;
+  orderIndex: number;
+  backgroundColor: string;
+  backgroundImage: string | null;
+  customBackgroundMusic: string | null;
+  slide: Slide;
+}
 
-  // State to manage scale ratio based on screen size
-  const [fullScale, setFullScale] = useState(1);
-  const containerRef = useRef<HTMLDivElement>(null);
+interface SlideShowProps {
+  activities: Activity[];
+}
 
-  // Calculate scale to fill screen while maintaining aspect ratio
-  useEffect(() => {
-    const calcScale = () => {
-      if (!containerRef.current) return;
+const ORIGINAL_CANVAS_WIDTH = 812; // Kích thước gốc của canvas
 
-      const vw = window.innerWidth;
-      const vh = window.innerHeight;
+const SlideShow: React.FC<SlideShowProps> = ({ activities }) => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
+  const fabricCanvas = useRef<fabric.Canvas | null>(null);
 
-      // Calculate scale to fill screen, maintain original ratio
-      const scaleW = vw / canvasW;
-      const scaleH = vh / canvasH;
+  // Khởi tạo canvas
+  const initCanvas = (canvasEl: HTMLCanvasElement, backgroundColor: string) => {
+    const canvas = new fabric.Canvas(canvasEl, {
+      width: 1200, // Kích thước mới cho preview
+      height: 680,
+      backgroundColor,
+      selection: false, // Vô hiệu hóa chọn trong chế độ xem
+    });
+    fabricCanvas.current = canvas;
+    return canvas;
+  };
 
-      // Choose smaller ratio to ensure slide fits completely without cropping
-      const scale = Math.min(scaleW, scaleH) * 1; // 5% margin
-      setFullScale(scale);
-    };
+  // Render slide lên canvas
+  const renderSlide = (activity: Activity) => {
+    console.log('Slide elements:', activity.slide.slideElements);
+    const canvas = fabricCanvas.current;
+    if (!canvas) return;
 
-    calcScale();
-    window.addEventListener('resize', calcScale);
-    return () => window.removeEventListener('resize', calcScale);
-  }, []);
+    // Xóa nội dung canvas hiện tại
+    canvas.clear();
+    canvas.backgroundColor = activity.backgroundColor || '#fff';
+    canvas.renderAll();
 
-  // Function to properly parse text content from Fabric.js JSON
-  const renderTextContent = (textContent: string) => {
-    try {
-      const textProps = JSON.parse(textContent);
+    // Sắp xếp elements theo layerOrder
+    const sortedElements = [...activity.slide.slideElements].sort(
+      (a, b) => a.layerOrder - b.layerOrder
+    );
 
-      // Extract base properties
-      const text = textProps.text || '';
-      const scaleX = textProps.scaleX || 1;
-      const scaleY = textProps.scaleY || 1;
+    sortedElements.forEach((element) => {
+      const {
+        positionX,
+        positionY,
+        width,
+        height,
+        rotation,
+        slideElementType,
+        content,
+        sourceUrl,
+      } = element;
+      const canvasWidth = canvas.getWidth();
+      const canvasHeight = canvas.getHeight();
 
-      // Base text styles matching Fabric.js properties
-      const baseStyles: React.CSSProperties = {
-        fontSize: `${textProps.fontSize}px`,
-        fontWeight: textProps.fontWeight,
-        fontFamily: textProps.fontFamily || 'Arial',
-        fontStyle: textProps.fontStyle,
-        color: textProps.fill || '#000000',
-        textAlign: (textProps.textAlign || 'left') as any,
-        lineHeight: textProps.lineHeight || 'normal',
-        letterSpacing: textProps.charSpacing
-          ? `${textProps.charSpacing}px`
-          : 'normal',
-        direction: textProps.direction,
-        backgroundColor: textProps.textBackgroundColor || 'transparent',
-        opacity: textProps.opacity,
-        whiteSpace: 'pre-wrap',
-        overflowWrap: 'break-word',
-        width: '100%',
-        height: '100%',
-        overflow: 'hidden',
-        transform: `scale(${scaleX}, ${scaleY})`,
-        transformOrigin: 'top left',
-        padding: 0,
-        margin: 0,
-        display: 'block',
-        textDecoration:
-          [
-            textProps.underline ? 'underline' : '',
-            textProps.overline ? 'overline' : '',
-            textProps.linethrough ? 'line-through' : '',
-          ]
-            .filter(Boolean)
-            .join(' ') || 'none',
-      };
+      // Tính toán vị trí và kích thước thực tế
+      const left = (positionX / 100) * canvasWidth;
+      const top = (positionY / 100) * canvasHeight;
+      const elementWidth = (width / 100) * canvasWidth;
+      const elementHeight = (height / 100) * canvasHeight;
 
-      // Process style segments if available
-      const stylesArray = textProps.styles || [];
-      if (!stylesArray.length) {
-        // If no special styling, return the whole text with base styles (including textDecoration)
-        return <div style={baseStyles}>{text}</div>;
-      }
+      if (slideElementType === 'IMAGE' && sourceUrl) {
+        console.log('Bắt đầu tải ảnh:', sourceUrl);
+        const imgElement = new Image();
+        imgElement.onload = () => {
+          console.log('Ảnh tải thành công qua Image:', sourceUrl, {
+            width: imgElement.width,
+            height: imgElement.height,
+          });
+          const img = new fabric.Image(imgElement);
+          console.log('Ảnh tạo qua Fabric:', {
+            width: img.width,
+            height: img.height,
+          });
+          if (!img.width || !img.height) {
+            console.error(`Lỗi: Ảnh không có kích thước hợp lệ - ${sourceUrl}`);
+            return;
+          }
+          const scaleX = img.width > 0 ? elementWidth / img.width : 1;
+          const scaleY = img.height > 0 ? elementHeight / img.height : 1;
+          img.set({
+            left,
+            top,
+            angle: rotation,
+            scaleX,
+            scaleY,
+            selectable: false,
+          });
+          console.log('Thêm ảnh vào canvas:', { left, top, scaleX, scaleY });
+          canvas.add(img);
+          canvas.renderAll();
+          console.log(
+            'Objects trong canvas (sau khi thêm ảnh):',
+            canvas.getObjects()
+          );
+        };
+        imgElement.onerror = (err) => {
+          console.error(`Lỗi tải ảnh qua Image từ ${sourceUrl}:`, err);
+        };
+        imgElement.src = sourceUrl;
+      } else if (slideElementType === 'TEXT' && content) {
+        const json = JSON.parse(content);
+        // Scale fontSize từ phần trăm sang pixel dựa trên canvasWidth mới
+        const fontSizePixel = (json.fontSize / 100) * canvasWidth;
+        // Lọc các thuộc tính hợp lệ, loại bỏ 'type' và 'version'
+        const { type, version, ...validProps } = json;
+        const textbox = new fabric.Textbox(json.text, {
+          ...validProps,
+          fontSize: fontSizePixel, // Áp dụng fontSize đã scale
+          left,
+          top,
+          width: elementWidth,
+          height: elementHeight,
+          angle: rotation,
+          selectable: false,
+        });
 
-      // Sort style segments by starting position
-      stylesArray.sort((a: any, b: any) => a.start - b.start);
-
-      // Build segments array with styled and unstyled portions
-      let segments: {
-        start: number;
-        end: number;
-        style: any;
-      }[] = [];
-      let currentIndex = 0;
-
-      stylesArray.forEach((styleEntry: any) => {
-        if (currentIndex < styleEntry.start) {
-          segments.push({
-            start: currentIndex,
-            end: styleEntry.start,
-            style: {},
+        // Scale fontSize trong styles nếu có
+        if (json.styles && json.styles.length > 0) {
+          json.styles.forEach((style: any) => {
+            if (style.style.fontSize) {
+              const scaledFontSize = (style.style.fontSize / 100) * canvasWidth;
+              textbox.setSelectionStyles(
+                { ...style.style, fontSize: scaledFontSize },
+                style.start,
+                style.end
+              );
+            } else {
+              textbox.setSelectionStyles(style.style, style.start, style.end);
+            }
           });
         }
-        segments.push({
-          start: styleEntry.start,
-          end: styleEntry.end,
-          style: styleEntry.style,
-        });
-        currentIndex = styleEntry.end;
-      });
 
-      // Add final unstyled segment if needed
-      if (currentIndex < text.length) {
-        segments.push({
-          start: currentIndex,
-          end: text.length,
-          style: {},
-        });
+        canvas.add(textbox);
+        canvas.renderAll();
+        console.log(
+          'Objects trong canvas (sau khi thêm text):',
+          canvas.getObjects()
+        );
       }
+    });
+  };
 
-      // Render each segment with appropriate styling
-      return (
-        <div style={baseStyles}>
-          {segments.map((segment, index) => {
-            const segmentText = text.slice(segment.start, segment.end);
-            const segmentStyle: React.CSSProperties = {
-              ...segment.style,
-              textDecoration:
-                [
-                  segment.style.underline || textProps.underline
-                    ? 'underline'
-                    : '',
-                  segment.style.overline || textProps.overline
-                    ? 'overline'
-                    : '',
-                  segment.style.linethrough || textProps.linethrough
-                    ? 'line-through'
-                    : '',
-                ]
-                  .filter(Boolean)
-                  .join(' ') || 'none',
-              fontSize: segment.style.fontSize
-                ? `${segment.style.fontSize}px`
-                : baseStyles.fontSize,
-              color: segment.style.fill || baseStyles.color,
-              fontWeight: segment.style.fontWeight || baseStyles.fontWeight,
-              fontStyle: segment.style.fontStyle || baseStyles.fontStyle,
-            };
-            return (
-              <span key={index} style={segmentStyle}>
-                {segmentText}
-              </span>
-            );
-          })}
-        </div>
-      );
-    } catch (error) {
-      console.error('Failed to parse text content:', error);
-      return <div>Error rendering text</div>;
+  // Khởi tạo canvas và render slide hiện tại
+  useEffect(() => {
+    if (!canvasRef.current || !activities || activities.length === 0) return;
+
+    const canvas = initCanvas(
+      canvasRef.current,
+      activities[0].backgroundColor || '#fff'
+    );
+    renderSlide(activities[currentSlideIndex]);
+
+    return () => {
+      canvas.dispose();
+    };
+  }, [activities, currentSlideIndex]);
+
+  // Xử lý chuyển slide
+  const handleNextSlide = () => {
+    if (activities && currentSlideIndex < activities.length - 1) {
+      setCurrentSlideIndex(currentSlideIndex + 1);
     }
   };
 
-  // Function to calculate element styles based on canvas properties
-  const calculateElementStyle = (
-    element: SlideElement
-  ): React.CSSProperties => {
-    return {
-      position: 'absolute',
-      left: `${element.positionX}%`,
-      top: `${element.positionY}%`,
-      width: `${element.width}%`,
-      height: `${element.height}%`,
-      transform: `rotate(${element.rotation}deg)`,
-      transformOrigin: 'top left',
-      overflow: 'visible', // Allow text to expand beyond boundaries if needed
-      zIndex: element.layerOrder,
-    };
+  const handlePrevSlide = () => {
+    if (currentSlideIndex > 0) {
+      setCurrentSlideIndex(currentSlideIndex - 1);
+    }
   };
 
-  // Main rendering logic for activities (slides)
+  if (!activities || activities.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        Không tìm thấy slide
+      </div>
+    );
+  }
+
   return (
-    <div
-      ref={containerRef}
-      style={{
-        width: '100vw',
-        height: '100vh',
-        overflow: 'hidden',
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        backgroundColor: '#000',
-      }}
-    >
+    <div className="flex flex-col items-center justify-center h-screen bg-gray-100">
       <div
-        className="flex"
         style={{
-          width: `${canvasW}px`,
-          height: `${canvasH}px`,
-          transform: `scale(${fullScale})`,
-          transformOrigin: 'center center',
           position: 'relative',
+          width: '1200px',
+          height: '680px',
         }}
       >
-        {collection.activities.map((activity) => {
-          const { activityId, backgroundColor, backgroundImage, slide } =
-            activity;
-          return (
-            <section
-              key={activityId}
-              className="snap-start relative flex-shrink-0"
-              style={{
-                width: `${canvasW}px`,
-                height: `${canvasH}px`,
-                backgroundColor,
-                backgroundImage: backgroundImage
-                  ? `url(${backgroundImage})`
-                  : undefined,
-                backgroundSize: 'cover',
-                backgroundPosition: 'center',
-                position: 'relative',
-              }}
-            >
-              {slide.slideElements
-                .sort((a, b) => a.layerOrder - b.layerOrder)
-                .map((element) => {
-                  const elementStyle = calculateElementStyle(element);
-
-                  if (element.slideElementType === 'TEXT' && element.content) {
-                    return (
-                      <div key={element.slideElementId} style={elementStyle}>
-                        {renderTextContent(element.content)}
-                      </div>
-                    );
-                  }
-
-                  if (
-                    element.slideElementType === 'IMAGE' &&
-                    element.sourceUrl
-                  ) {
-                    return (
-                      <div key={element.slideElementId} style={elementStyle}>
-                        <div
-                          style={{
-                            position: 'relative',
-                            width: '100%',
-                            height: '100%',
-                          }}
-                        >
-                          <Image
-                            src={element.sourceUrl}
-                            alt=""
-                            fill
-                            style={{
-                              objectFit: 'contain',
-                              transform: 'scale(1)', // Ensure no additional scaling
-                            }}
-                            priority
-                          />
-                        </div>
-                      </div>
-                    );
-                  }
-
-                  return null;
-                })}
-            </section>
-          );
-        })}
+        <canvas ref={canvasRef} />
+      </div>
+      <div className="flex gap-4 mt-4">
+        <button
+          onClick={handlePrevSlide}
+          disabled={currentSlideIndex === 0}
+          className="px-4 py-2 bg-blue-500 text-white rounded disabled:bg-gray-300"
+        >
+          Trước
+        </button>
+        <button
+          onClick={handleNextSlide}
+          disabled={currentSlideIndex === activities.length - 1}
+          className="px-4 py-2 bg-blue-500 text-white rounded disabled:bg-gray-300"
+        >
+          Tiếp
+        </button>
       </div>
     </div>
   );

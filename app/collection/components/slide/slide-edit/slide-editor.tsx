@@ -10,8 +10,9 @@ import { slidesApi } from '@/api-client/slides-api';
 import type { SlideElementPayload } from '@/types/slideInterface';
 import { debounce } from 'lodash';
 
-const HARD_SLIDE_ID = '7da37c18-e78d-4c43-9321-079314ae378d';
+const HARD_SLIDE_ID = '6b6409e0-6159-4825-9dda-82caf07e9e6c';
 const HARD_ELEMENT_ID = 'a7c1c8de-cc1b-4aca-9db8-44c69bd13e9b';
+const ORIGINAL_CANVAS_WIDTH = 812;
 
 export interface FabricEditorProps {
   slideTitle: string;
@@ -44,7 +45,7 @@ const FabricEditor: React.FC<FabricEditorProps> = ({
     const canvas = fabricCanvas.current;
     if (!canvas) return;
 
-    // lấy zoom & kích thước gốc của canvas (đã tính zoom)
+    // Lấy zoom & kích thước gốc của canvas (đã tính zoom)
     const zoom = canvas.getZoom();
     const cw = canvas.getWidth()! / zoom;
     const ch = canvas.getHeight()! / zoom;
@@ -52,16 +53,16 @@ const FabricEditor: React.FC<FabricEditorProps> = ({
     const rawLeft = obj.left! / zoom;
     const rawTop = obj.top! / zoom;
 
-    // tính w/h riêng cho image vs textbox
+    // Tính w/h riêng cho image vs textbox
     let w: number, h: number;
     if (obj.type === 'image') {
-      // actual rendered size trên canvas
+      // Actual rendered size trên canvas
       w = (obj as fabric.Image).getScaledWidth() / zoom;
       h = (obj as fabric.Image).getScaledHeight() / zoom;
     } else {
-      // textbox: giữ nguyên raw width/height
+      // Textbox: giữ nguyên raw width/height
       w = obj.width!;
-      h = obj.height!;
+      h = (obj as fabric.Textbox).getScaledHeight() / zoom;
     }
 
     const base = {
@@ -75,10 +76,29 @@ const FabricEditor: React.FC<FabricEditorProps> = ({
 
     let payload: SlideElementPayload;
     if (obj.type === 'textbox') {
+      // Chuyển fontSize thành phần trăm so với ORIGINAL_CANVAS_WIDTH
+      const fontSizePercent =
+        ((obj as fabric.Textbox).fontSize! / ORIGINAL_CANVAS_WIDTH) * 100;
+      const textboxJson = {
+        ...obj.toJSON(),
+        fontSize: fontSizePercent, // Lưu fontSize dưới dạng phần trăm
+      };
+      // Nếu có styles, chuyển fontSize trong styles thành phần trăm
+      if (textboxJson.styles && Object.keys(textboxJson.styles).length > 0) {
+        for (const lineIndex in textboxJson.styles) {
+          const line = textboxJson.styles[lineIndex];
+          for (const charIndex in line) {
+            if (line[charIndex].fontSize) {
+              line[charIndex].fontSize =
+                (line[charIndex].fontSize / ORIGINAL_CANVAS_WIDTH) * 100;
+            }
+          }
+        }
+      }
       payload = {
         ...base,
         slideElementType: 'TEXT',
-        content: JSON.stringify(obj.toJSON()),
+        content: JSON.stringify(textboxJson),
       };
     } else {
       payload = {
@@ -120,7 +140,7 @@ const FabricEditor: React.FC<FabricEditorProps> = ({
           activeObjects.forEach((obj) => {
             const slideElementId = obj.get('slideElementId');
             if (slideElementId) {
-               canvas.remove(obj);
+              canvas.remove(obj);
               slidesApi
                 .deleteSlidesElement(HARD_SLIDE_ID, slideElementId)
                 .then((res) => {
@@ -198,7 +218,7 @@ const FabricEditor: React.FC<FabricEditorProps> = ({
       updateSlideElement(obj);
     });
 
-    // Sự kiện khi kiểu dáng hoặc  thay đổi (bold, italic, underline, v.v.)
+    // Sự kiện khi kiểu dáng hoặc thay đổi (bold, italic, underline, v.v.)
     canvas.on('text:selection:changed', (e) => {
       const obj = e.target as fabric.Textbox;
       if (!obj || obj.type !== 'textbox') return;
@@ -320,7 +340,6 @@ const FabricEditor: React.FC<FabricEditorProps> = ({
     const pointer = canvas.getPointer(e.nativeEvent);
 
     const tempImg = new Image();
-    tempImg.crossOrigin = 'anonymous';
     tempImg.onerror = () => {
       console.error('Failed to load image from URL:', url);
     };

@@ -27,7 +27,8 @@ export default function PexelsSidebar() {
         `https://api.pexels.com/v1/search?query=${search}&per_page=20`,
         {
           headers: {
-            Authorization: process.env.NEXT_PUBLIC_PEXELS_API_KEY || '',
+            Authorization:
+              '6fm7eg5wT8R36ipHKuGvpdeRIAwk0EmKsDWDQ2UG1UUig4is7w0y0yKF',
           },
         }
       );

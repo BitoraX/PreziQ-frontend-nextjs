@@ -1,3 +1,5 @@
+'use client';
+
 import * as fabric from 'fabric';
 import { FabricImage } from 'fabric';
 import { createGradientFill } from './fabricHelpers';
@@ -7,7 +9,8 @@ import type { SlideElementPayload } from '@/types/slideInterface';
 import { useEffect } from 'react';
 import { debounce } from 'lodash';
 
-const HARD_SLIDE_ID = '7da37c18-e78d-4c43-9321-079314ae378d';
+const HARD_SLIDE_ID = '6b6409e0-6159-4825-9dda-82caf07e9e6c';
+const ORIGINAL_CANVAS_WIDTH = 812;
 
 type StyleObj = Partial<{
   fontWeight: string;
@@ -31,6 +34,8 @@ const updateTextboxElement = debounce((textbox: fabric.Textbox) => {
   const w = textbox.width!;
   const h = textbox.height!;
 
+  const fontSizePercent = (textbox.fontSize! / ORIGINAL_CANVAS_WIDTH) * 100;
+
   const payload: SlideElementPayload = {
     positionX: (rawLeft / cw) * 100,
     positionY: (rawTop / ch) * 100,
@@ -39,7 +44,10 @@ const updateTextboxElement = debounce((textbox: fabric.Textbox) => {
     rotation: textbox.angle || 0,
     layerOrder: canvas.getObjects().indexOf(textbox),
     slideElementType: 'TEXT',
-    content: JSON.stringify(textbox.toJSON()),
+    content: JSON.stringify({
+      ...textbox.toJSON(),
+      fontSize: fontSizePercent, 
+    }),
   };
 
   slidesApi
@@ -93,6 +101,7 @@ export const ToolbarHandlers = (
       return;
     }
     canvas.set('isCreating', true);
+    const defaultFontSizePercent = (20 / ORIGINAL_CANVAS_WIDTH) * 100;
     const textbox = new fabric.Textbox('New Text', {
       left: 50,
       top: 250,
@@ -121,7 +130,10 @@ export const ToolbarHandlers = (
       rotation: textbox.angle || 0,
       layerOrder: (textbox.get('layerOrder') as number) || 0,
       slideElementType: 'TEXT',
-      content: JSON.stringify(textbox.toJSON()),
+      content: JSON.stringify({
+        ...textbox.toJSON(),
+        fontSize: defaultFontSizePercent,
+      }),
     };
 
     console.log('Gửi API addSlidesElement');
@@ -146,16 +158,54 @@ export const ToolbarHandlers = (
     const ev = e as CustomEvent<{ url: string }>;
     const { url } = ev.detail;
 
-    FabricImage.fromURL(url, { crossOrigin: 'anonymous' })
+    if (canvas.get('isCreating')) {
+      console.log('Bỏ qua addImage vì đang tạo');
+      return;
+    }
+    canvas.set('isCreating', true);
+
+    FabricImage.fromURL(url)
       .then((img) => {
-        img.set({ left: 100, top: 100, scaleX: 0.5, scaleY: 0.5 });
+        img.set({ left: 100, top: 100, scaleX: 0.5, scaleY: 0.5, isNew: true });
         canvas.add(img);
         canvas.setActiveObject(img);
         canvas.requestRenderAll();
-        updateImageElement(img);
+
+        const cw = canvas.getWidth()!;
+        const ch = canvas.getHeight()!;
+        const w = img.getScaledWidth();
+        const h = img.getScaledHeight();
+
+        const payload: SlideElementPayload = {
+          positionX: (img.left! / cw) * 100,
+          positionY: (img.top! / ch) * 100,
+          width: (w / cw) * 100,
+          height: (h / ch) * 100,
+          rotation: img.angle || 0,
+          layerOrder: canvas.getObjects().indexOf(img),
+          slideElementType: 'IMAGE',
+          sourceUrl: url,
+        };
+
+        slidesApi
+          .addSlidesElement(HARD_SLIDE_ID, payload)
+          .then((res) => {
+            console.log('Tạo image element thành công:', res.data);
+            img.set('slideElementId', res.data.data.slideElementId);
+            img.set('isNew', false);
+          })
+          .catch((err) => {
+            console.error('Lỗi khi tạo image element:', err);
+            canvas.remove(img);
+            canvas.renderAll();
+          })
+          .finally(() => {
+            canvas.set('isCreating', false);
+          });
       })
       .catch((err) => {
         console.error('Failed to load image:', err);
+        canvas.set('isCreating', false);
       });
   }
 

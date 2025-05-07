@@ -4,16 +4,15 @@ import React, { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { toast } from '@/hooks/use-toast';
 import { collectionsApi } from '@/api/collections-api';
-import SlideShow, { CollectionData } from '@/components/slides/slide-show';
+import SlideShow, { Activity } from '@/components/slides/slide-show';
 import Loading from '@/components/common/loading';
 
 export default function SlidePage() {
-   const params = useParams();
-   const rawId = params.collectionId;
-   // nếu rawId là string[] thì lấy phần tử đầu
-   const collectionId = Array.isArray(rawId) ? rawId[0] : rawId;
-   
-  const [collection, setCollection] = useState<CollectionData | null>(null);
+  const params = useParams();
+  const rawId = params.collectionId;
+  const collectionId = Array.isArray(rawId) ? rawId[0] : rawId;
+
+  const [activities, setActivities] = useState<Activity[] | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -21,7 +20,8 @@ export default function SlidePage() {
     collectionsApi
       .getCollectionById(collectionId)
       .then((res) => {
-        setCollection(res.data.data);
+        console.log(res.data.data.activities);
+        setActivities(res.data.data.activities);
       })
       .catch(() => {
         toast({ title: 'Không tải được slide', variant: 'destructive' });
@@ -32,18 +32,8 @@ export default function SlidePage() {
   }, [collectionId]);
 
   if (loading) {
-    return (
-      <Loading/>
-    );
+    return <Loading />;
   }
 
-  if (!collection) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        Không tìm thấy slide
-      </div>
-    );
-  }
-
-  return <SlideShow collection={collection} />;
+  return <SlideShow activities={activities || []} />;
 }
