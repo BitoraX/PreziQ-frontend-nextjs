@@ -5,14 +5,81 @@ import WebFont from 'webfontloader';
 import { slidesApi } from '@/api-client/slides-api';
 import type { SlideElementPayload } from '@/types/slideInterface';
 import { useEffect } from 'react';
+import { debounce } from 'lodash';
 
-const HARD_SLIDE_ID = '2eb14abc-2a04-4439-bb8c-cba17889a0fb';
+const HARD_SLIDE_ID = '7da37c18-e78d-4c43-9321-079314ae378d';
 
 type StyleObj = Partial<{
   fontWeight: string;
   fontStyle: string;
   underline: boolean;
 }>;
+
+const updateTextboxElement = debounce((textbox: fabric.Textbox) => {
+  const slideElementId = textbox.get('slideElementId');
+  if (!slideElementId) return;
+
+  const canvas = textbox.canvas;
+  if (!canvas) return;
+
+  const zoom = canvas.getZoom();
+  const cw = canvas.getWidth()! / zoom;
+  const ch = canvas.getHeight()! / zoom;
+
+  const rawLeft = textbox.left! / zoom;
+  const rawTop = textbox.top! / zoom;
+  const w = textbox.width!;
+  const h = textbox.height!;
+
+  const payload: SlideElementPayload = {
+    positionX: (rawLeft / cw) * 100,
+    positionY: (rawTop / ch) * 100,
+    width: (w / cw) * 100,
+    height: (h / ch) * 100,
+    rotation: textbox.angle || 0,
+    layerOrder: canvas.getObjects().indexOf(textbox),
+    slideElementType: 'TEXT',
+    content: JSON.stringify(textbox.toJSON()),
+  };
+
+  slidesApi
+    .updateSlidesElement(HARD_SLIDE_ID, slideElementId, payload)
+    .then((res) => console.log('Updated textbox', res.data))
+    .catch((err) => console.error('Update textbox failed', err));
+}, 500);
+
+const updateImageElement = debounce((image: fabric.Image) => {
+  const slideElementId = image.get('slideElementId');
+  if (!slideElementId) return;
+
+  const canvas = image.canvas;
+  if (!canvas) return;
+
+  const zoom = canvas.getZoom();
+  const cw = canvas.getWidth()! / zoom;
+  const ch = canvas.getHeight()! / zoom;
+
+  const rawLeft = image.left! / zoom;
+  const rawTop = image.top! / zoom;
+  const w = image.getScaledWidth() / zoom;
+  const h = image.getScaledHeight() / zoom;
+
+  const payload: SlideElementPayload = {
+    positionX: (rawLeft / cw) * 100,
+    positionY: (rawTop / ch) * 100,
+    width: (w / cw) * 100,
+    height: (h / ch) * 100,
+    rotation: image.angle || 0,
+    layerOrder: canvas.getObjects().indexOf(image),
+    slideElementType: 'IMAGE',
+    sourceUrl: image.get('sourceUrl') || image.getSrc(),
+  };
+
+  slidesApi
+    .updateSlidesElement(HARD_SLIDE_ID, slideElementId, payload)
+    .then((res) => console.log('Updated image', res.data))
+    .catch((err) => console.error('Update image failed', err));
+}, 500);
 
 export const ToolbarHandlers = (
   canvas: fabric.Canvas,
@@ -76,17 +143,16 @@ export const ToolbarHandlers = (
   };
 
   function onAddImage(e: Event) {
-    // cast to your custom shape
     const ev = e as CustomEvent<{ url: string }>;
     const { url } = ev.detail;
 
-    // now you can use async, but not on the listener itself
     FabricImage.fromURL(url, { crossOrigin: 'anonymous' })
       .then((img) => {
         img.set({ left: 100, top: 100, scaleX: 0.5, scaleY: 0.5 });
         canvas.add(img);
         canvas.setActiveObject(img);
         canvas.requestRenderAll();
+        updateImageElement(img);
       })
       .catch((err) => {
         console.error('Failed to load image:', err);
@@ -149,19 +215,25 @@ export const ToolbarHandlers = (
 
     if (start === end) return;
 
-    textbox.setSelectionStyles({ [styleName]: styleValue }, start, end);
+    // Nếu vùng chọn là toàn bộ văn bản, áp dụng ở cấp cao và xóa style trong styles
+    if (start === 0 && end === textbox.text!.length) {
+      textbox.set(styleName as any, styleValue);
+      removeStyleProperty(textbox, styleName as keyof StyleObj);
+    } else {
+      textbox.setSelectionStyles({ [styleName]: styleValue }, start, end);
+    }
+
     textbox.dirty = true;
     canvas.requestRenderAll();
+    updateTextboxElement(textbox);
   }
 
   function removeStyleProperty(
     textbox: fabric.Textbox,
-    prop: keyof StyleObj | 'fill'
+    prop: keyof StyleObj | 'fill' | 'fontSize' | 'fontFamily'
   ) {
-    // nếu chưa có styles thì thôi
     if (!textbox.styles) return;
 
-    // ép kiểu để có index signature
     const styles = textbox.styles as unknown as Record<
       string,
       Record<string, any>
@@ -181,7 +253,6 @@ export const ToolbarHandlers = (
       }
     }
 
-    // gán lại (ép kiểu ngược) để Fabric nhìn thấy changes
     textbox.styles = styles as any;
     textbox.dirty = true;
   }
@@ -192,13 +263,24 @@ export const ToolbarHandlers = (
 
     const textbox = active as fabric.Textbox;
     if (textbox.isEditing && e.detail.color) {
-      applyStyleToSelection(textbox, 'fill', e.detail.color);
+      const start = textbox.selectionStart || 0;
+      const end = textbox.selectionEnd || 0;
+      if (start === end) return;
+
+      // Nếu vùng chọn là toàn bộ văn bản, áp dụng ở cấp cao
+      if (start === 0 && end === textbox.text!.length) {
+        textbox.set('fill', e.detail.color);
+        removeStyleProperty(textbox, 'fill');
+      } else {
+        applyStyleToSelection(textbox, 'fill', e.detail.color);
+      }
     } else {
       textbox.set('fill', e.detail.color);
-       removeStyleProperty(textbox, 'fill');
-      textbox.dirty = true;
-      canvas.requestRenderAll();
+      removeStyleProperty(textbox, 'fill');
     }
+    textbox.dirty = true;
+    canvas.requestRenderAll();
+    updateTextboxElement(textbox);
   };
 
   const changeAlign = (
@@ -206,8 +288,11 @@ export const ToolbarHandlers = (
   ) => {
     const active = canvas.getActiveObject();
     if (active && active.type === 'textbox') {
-      (active as fabric.Textbox).set({ textAlign: e.detail.align });
+      const textbox = active as fabric.Textbox;
+      textbox.set({ textAlign: e.detail.align });
       canvas.renderAll();
+      updateTextboxElement(textbox);
+      emitFormatState();
     }
   };
 
@@ -220,7 +305,101 @@ export const ToolbarHandlers = (
 
   function emitFormatState(startIdx?: number, endIdx?: number) {
     const obj = canvas.getActiveObject();
-    if (!obj || obj.type !== 'textbox') {
+    let textTransform = 'none';
+
+    if (obj && obj.type === 'textbox') {
+      const tb = obj as fabric.Textbox;
+      const alignment = tb.textAlign || 'left';
+      const fontFamily = tb.fontFamily || 'Roboto';
+      const fontSize = tb.fontSize || 16;
+
+      let boldActive = false;
+      let italicActive = false;
+      let underlineActive = false;
+
+      if (
+        tb.isEditing &&
+        startIdx !== undefined &&
+        endIdx !== undefined &&
+        startIdx < endIdx
+      ) {
+        const selectedText = tb.text!.slice(startIdx, endIdx);
+        if (
+          selectedText === selectedText.toUpperCase() &&
+          selectedText !== selectedText.toLowerCase()
+        ) {
+          textTransform = 'uppercase';
+        } else if (selectedText === selectedText.toLowerCase()) {
+          textTransform = 'lowercase';
+        } else if (
+          selectedText.length > 0 &&
+          selectedText[0] === selectedText[0].toUpperCase() &&
+          selectedText.slice(1) === selectedText.slice(1).toLowerCase()
+        ) {
+          textTransform = 'capitalize';
+        }
+
+        const selStyles = tb.getSelectionStyles(
+          startIdx,
+          endIdx,
+          true
+        ) as Array<{
+          fontWeight?: string;
+          fontStyle?: string;
+          underline?: boolean;
+          fontFamily?: string;
+          fontSize?: number;
+        }>;
+
+        boldActive = selStyles.every((s) => s.fontWeight === 'bold');
+        italicActive = selStyles.every((s) => s.fontStyle === 'italic');
+        underlineActive = selStyles.every((s) => s.underline === true);
+      } else {
+        boldActive = tb.fontWeight === 'bold';
+        italicActive = tb.fontStyle === 'italic';
+        underlineActive = tb.underline === true;
+
+        const allText = tb.text || '';
+        if (
+          allText === allText.toUpperCase() &&
+          allText !== allText.toLowerCase()
+        ) {
+          textTransform = 'uppercase';
+        } else if (allText === allText.toLowerCase()) {
+          textTransform = 'lowercase';
+        } else if (
+          allText.length > 0 &&
+          allText[0] === allText[0].toUpperCase() &&
+          allText.slice(1) === allText.slice(1).toLowerCase()
+        ) {
+          textTransform = 'capitalize';
+        }
+
+        if (tb.styles) {
+          const allStyles = tb.getSelectionStyles(0, tb.text!.length, true);
+          boldActive =
+            boldActive && allStyles.every((s) => s.fontWeight === 'bold');
+          italicActive =
+            italicActive && allStyles.every((s) => s.fontStyle === 'italic');
+          underlineActive =
+            underlineActive && allStyles.every((s) => s.underline === true);
+        }
+      }
+
+      window.dispatchEvent(
+        new CustomEvent('toolbar:format-change', {
+          detail: {
+            bold: boldActive,
+            italic: italicActive,
+            underline: underlineActive,
+            alignment,
+            textTransform,
+            fontFamily,
+            fontSize,
+          },
+        })
+      );
+    } else {
       window.dispatchEvent(
         new CustomEvent('toolbar:format-change', {
           detail: {
@@ -228,60 +407,13 @@ export const ToolbarHandlers = (
             italic: false,
             underline: false,
             alignment: 'left',
+            textTransform: 'none',
+            fontFamily: 'Roboto',
+            fontSize: 16,
           },
         })
       );
-      return;
     }
-
-    const tb = obj as fabric.Textbox;
-    const alignment = tb.textAlign || 'left';
-
-    let boldActive = false;
-    let italicActive = false;
-    let underlineActive = false;
-
-    if (
-      tb.isEditing &&
-      startIdx !== undefined &&
-      endIdx !== undefined &&
-      startIdx < endIdx
-    ) {
-      const selStyles = tb.getSelectionStyles(startIdx, endIdx, true) as Array<{
-        fontWeight?: string;
-        fontStyle?: string;
-        underline?: boolean;
-      }>;
-
-      boldActive = selStyles.every((s) => s.fontWeight === 'bold');
-      italicActive = selStyles.every((s) => s.fontStyle === 'italic');
-      underlineActive = selStyles.every((s) => s.underline === true);
-    } else {
-      boldActive = tb.fontWeight === 'bold';
-      italicActive = tb.fontStyle === 'italic';
-      underlineActive = tb.underline === true;
-
-      if (tb.styles) {
-        const allStyles = tb.getSelectionStyles(0, tb.text!.length, true);
-        boldActive =
-          boldActive && allStyles.every((s) => s.fontWeight === 'bold');
-        italicActive =
-          italicActive && allStyles.every((s) => s.fontStyle === 'italic');
-        underlineActive =
-          underlineActive && allStyles.every((s) => s.underline === true);
-      }
-    }
-
-    window.dispatchEvent(
-      new CustomEvent('toolbar:format-change', {
-        detail: {
-          bold: boldActive,
-          italic: italicActive,
-          underline: underlineActive,
-          alignment,
-        },
-      })
-    );
   }
 
   const handleToggleStyle = (
@@ -301,23 +433,33 @@ export const ToolbarHandlers = (
 
       if (e.detail.style === 'bold') {
         const allBold = selStyles.every((s) => s.fontWeight === 'bold');
-        applyStyleToSelection(
-          textbox,
-          'fontWeight',
-          allBold ? 'normal' : 'bold'
-        );
+        const newVal = allBold ? 'normal' : 'bold';
+        if (start === 0 && end === textbox.text!.length) {
+          textbox.set('fontWeight', newVal);
+          removeStyleProperty(textbox, 'fontWeight');
+        } else {
+          applyStyleToSelection(textbox, 'fontWeight', newVal);
+        }
       }
       if (e.detail.style === 'italic') {
         const allItalic = selStyles.every((s) => s.fontStyle === 'italic');
-        applyStyleToSelection(
-          textbox,
-          'fontStyle',
-          allItalic ? 'normal' : 'italic'
-        );
+        const newVal = allItalic ? 'normal' : 'italic';
+        if (start === 0 && end === textbox.text!.length) {
+          textbox.set('fontStyle', newVal);
+          removeStyleProperty(textbox, 'fontStyle');
+        } else {
+          applyStyleToSelection(textbox, 'fontStyle', newVal);
+        }
       }
       if (e.detail.style === 'underline') {
         const allUnderlined = selStyles.every((s) => s.underline === true);
-        applyStyleToSelection(textbox, 'underline', !allUnderlined);
+        const newVal = !allUnderlined;
+        if (start === 0 && end === textbox.text!.length) {
+          textbox.set('underline', newVal);
+          removeStyleProperty(textbox, 'underline');
+        } else {
+          applyStyleToSelection(textbox, 'underline', newVal);
+        }
       }
     } else {
       if (e.detail.style === 'bold') {
@@ -339,8 +481,10 @@ export const ToolbarHandlers = (
       }
     }
 
+    textbox.dirty = true;
     canvas.requestRenderAll();
     emitFormatState(textbox.selectionStart, textbox.selectionEnd);
+    updateTextboxElement(textbox);
   };
 
   const handleFontSizeChange = (e: CustomEvent<{ size: number }>) => {
@@ -349,11 +493,24 @@ export const ToolbarHandlers = (
 
     const textbox = obj as fabric.Textbox;
     if (textbox.isEditing) {
-      applyStyleToSelection(textbox, 'fontSize', e.detail.size);
+      const start = textbox.selectionStart || 0;
+      const end = textbox.selectionEnd || 0;
+      if (start === end) return;
+
+      if (start === 0 && end === textbox.text!.length) {
+        textbox.set('fontSize', e.detail.size);
+        removeStyleProperty(textbox, 'fontSize');
+      } else {
+        applyStyleToSelection(textbox, 'fontSize', e.detail.size);
+      }
     } else {
       textbox.set('fontSize', e.detail.size);
-      canvas.requestRenderAll();
+      removeStyleProperty(textbox, 'fontSize');
     }
+    textbox.dirty = true;
+    canvas.requestRenderAll();
+    updateTextboxElement(textbox);
+    emitFormatState();
   };
 
   const handleFontFamilyChange = (e: CustomEvent<{ font: string }>) => {
@@ -364,11 +521,132 @@ export const ToolbarHandlers = (
 
     const textbox = active as fabric.Textbox;
     if (textbox.isEditing) {
-      applyStyleToSelection(textbox, 'fontFamily', font);
+      const start = textbox.selectionStart || 0;
+      const end = textbox.selectionEnd || 0;
+      if (start === end) return;
+
+      if (start === 0 && end === textbox.text!.length) {
+        textbox.set('fontFamily', font);
+        removeStyleProperty(textbox, 'fontFamily');
+      } else {
+        applyStyleToSelection(textbox, 'fontFamily', font);
+      }
     } else {
       textbox.set('fontFamily', font);
-      canvas.requestRenderAll();
+      removeStyleProperty(textbox, 'fontFamily');
     }
+    textbox.dirty = true;
+    canvas.requestRenderAll();
+    updateTextboxElement(textbox);
+    emitFormatState();
+  };
+
+  const handleAlignElement = (
+    e: CustomEvent<{ alignType: 'center-h' | 'center-v' | 'center-both' }>
+  ) => {
+    const active = canvas.getActiveObject();
+    if (!active || !['textbox', 'image'].includes(active.type)) return;
+
+    const obj = active as fabric.Textbox | fabric.Image;
+    const zoom = canvas.getZoom();
+    const canvasWidth = canvas.getWidth()! / zoom;
+    const canvasHeight = canvas.getHeight()! / zoom;
+
+    let newLeft = obj.left!;
+    let newTop = obj.top!;
+
+    if (
+      e.detail.alignType === 'center-h' ||
+      e.detail.alignType === 'center-both'
+    ) {
+      const objWidth =
+        obj.type === 'textbox' ? obj.width! : obj.getScaledWidth() / zoom;
+      newLeft = (canvasWidth - objWidth) / 2;
+    }
+    if (
+      e.detail.alignType === 'center-v' ||
+      e.detail.alignType === 'center-both'
+    ) {
+      const objHeight =
+        obj.type === 'textbox' ? obj.height! : obj.getScaledHeight() / zoom;
+      newTop = (canvasHeight - objHeight) / 2;
+    }
+
+    obj.set({ left: newLeft, top: newTop });
+    canvas.renderAll();
+
+    if (obj.type === 'textbox') {
+      updateTextboxElement(obj as fabric.Textbox);
+    } else {
+      updateImageElement(obj as fabric.Image);
+    }
+  };
+
+  const handleTextTransform = (
+    e: CustomEvent<{
+      transform: 'uppercase' | 'lowercase' | 'capitalize' | 'none';
+    }>
+  ) => {
+    const obj = canvas.getActiveObject();
+    if (!obj || obj.type !== 'textbox') return;
+
+    const textbox = obj as fabric.Textbox;
+    let newText = textbox.text || '';
+
+    if (textbox.isEditing) {
+      const start = textbox.selectionStart || 0;
+      const end = textbox.selectionEnd || 0;
+      if (start === end) return;
+
+      const selectedText = newText.slice(start, end);
+      let transformedText = selectedText;
+      switch (e.detail.transform) {
+        case 'uppercase':
+          transformedText = selectedText.toUpperCase();
+          break;
+        case 'lowercase':
+          transformedText = selectedText.toLowerCase();
+          break;
+        case 'capitalize':
+          transformedText =
+            selectedText.charAt(0).toUpperCase() +
+            selectedText.slice(1).toLowerCase();
+          break;
+        case 'none':
+          transformedText = selectedText;
+          break;
+      }
+
+      newText = newText.slice(0, start) + transformedText + newText.slice(end);
+      textbox.set({ text: newText });
+      textbox.setSelectionStart(start);
+      textbox.setSelectionEnd(start + transformedText.length);
+    } else {
+      switch (e.detail.transform) {
+        case 'uppercase':
+          newText = newText.toUpperCase();
+          break;
+        case 'lowercase':
+          newText = newText.toLowerCase();
+          break;
+        case 'capitalize':
+          newText = newText
+            .split(' ')
+            .map(
+              (word) =>
+                word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+            )
+            .join(' ');
+          break;
+        case 'none':
+          break;
+      }
+      textbox.set({ text: newText });
+    }
+
+    canvas.requestRenderAll();
+    emitFormatState(textbox.selectionStart, textbox.selectionEnd);
+    updateTextboxElement(textbox);
   };
 
   const deleteObject = () => {
@@ -435,6 +713,18 @@ export const ToolbarHandlers = (
     canvas.requestRenderAll();
   };
 
+  // Hàm để tải lại Textbox từ JSON và đảm bảo underline được áp dụng
+  const loadTextboxFromJSON = (json: any) => {
+    const textbox = new fabric.Textbox(json.text, json);
+    if (json.underline) {
+      textbox.set('underline', true);
+      textbox.dirty = true; // Đánh dấu là dirty để buộc render lại
+    }
+    canvas.add(textbox);
+    canvas.renderAll();
+    return textbox;
+  };
+
   canvas.on('text:selection:changed', (e) => {
     const tb = e.target as fabric.Textbox;
     emitFormatState(tb.selectionStart, tb.selectionEnd);
@@ -442,6 +732,9 @@ export const ToolbarHandlers = (
 
   canvas.on('text:editing:entered', () => emitFormatState());
   canvas.on('text:editing:exited', () => emitFormatState());
+  canvas.on('object:modified', () => emitFormatState());
+  canvas.on('selection:created', () => emitFormatState());
+  canvas.on('selection:updated', () => emitFormatState());
 
   let isAddingTextbox = false;
   let textboxAddTimeout: NodeJS.Timeout | null = null;
@@ -454,7 +747,6 @@ export const ToolbarHandlers = (
 
     isAddingTextbox = true;
 
-    // Xóa timeout cũ nếu có
     if (textboxAddTimeout) {
       clearTimeout(textboxAddTimeout);
     }
@@ -468,32 +760,22 @@ export const ToolbarHandlers = (
     }, 500);
   };
 
-
-    // 1️⃣ Register listener đúng một lần khi canvas thay đổi
-    window.addEventListener('fabric:add-textbox', debouncedAddTextbox);
-    window.addEventListener(
-      'fabric:toggle-style',
-      handleToggleStyle as EventListener
-    );
-    window.addEventListener(
-      'fabric:font-size',
-      handleFontSizeChange as EventListener
-    );
-    window.addEventListener(
-      'fabric:font-family',
-      handleFontFamilyChange as EventListener
-    );
-    window.addEventListener('fabric:change-color', changeColor as EventListener);
-    window.addEventListener('fabric:change-align', changeAlign as EventListener);
-
-    return () => {
-      // 2️⃣ Cleanup: remove listener khi component unmount hoặc canvas thay đổi
-      window.removeEventListener('fabric:add-textbox', debouncedAddTextbox);
-    };
-
-  //window.addEventListener('fabric:add-textbox', addTextbox);
+  window.addEventListener('fabric:add-textbox', debouncedAddTextbox);
+  window.addEventListener(
+    'fabric:toggle-style',
+    handleToggleStyle as EventListener
+  );
+  window.addEventListener(
+    'fabric:font-size',
+    handleFontSizeChange as EventListener
+  );
+  window.addEventListener(
+    'fabric:font-family',
+    handleFontFamilyChange as EventListener
+  );
+  window.addEventListener('fabric:change-color', changeColor as EventListener);
+  window.addEventListener('fabric:change-align', changeAlign as EventListener);
   window.addEventListener('fabric:add-image', onAddImage);
-  
   window.addEventListener('fabric:arrange', (e: Event) => {
     const { action } = (e as CustomEvent<{ action: string }>).detail;
     arrangeObject(action as any);
@@ -502,9 +784,63 @@ export const ToolbarHandlers = (
   window.addEventListener('fabric:add-circle', () => addShape('circle'));
   window.addEventListener('fabric:add-triangle', () => addShape('triangle'));
   window.addEventListener('fabric:add-arrow', () => addShape('arrow'));
-
   window.addEventListener('fabric:group', groupObjects);
   window.addEventListener('fabric:ungroup', ungroupObjects);
   window.addEventListener('fabric:clear', clearCanvas);
   window.addEventListener('fabric:delete', deleteObject);
+  window.addEventListener(
+    'fabric:align-element',
+    handleAlignElement as EventListener
+  );
+  window.addEventListener(
+    'fabric:text-transform',
+    handleTextTransform as EventListener
+  );
+
+  return () => {
+    window.removeEventListener('fabric:add-textbox', debouncedAddTextbox);
+    window.removeEventListener(
+      'fabric:toggle-style',
+      handleToggleStyle as EventListener
+    );
+    window.removeEventListener(
+      'fabric:font-size',
+      handleFontSizeChange as EventListener
+    );
+    window.removeEventListener(
+      'fabric:font-family',
+      handleFontFamilyChange as EventListener
+    );
+    window.removeEventListener(
+      'fabric:change-color',
+      changeColor as EventListener
+    );
+    window.removeEventListener(
+      'fabric:change-align',
+      changeAlign as EventListener
+    );
+    window.removeEventListener('fabric:add-image', onAddImage);
+    window.removeEventListener('fabric:arrange', (e: Event) => {
+      const { action } = (e as CustomEvent<{ action: string }>).detail;
+      arrangeObject(action as any);
+    });
+    window.removeEventListener('fabric:add-rect', () => addShape('rect'));
+    window.removeEventListener('fabric:add-circle', () => addShape('circle'));
+    window.removeEventListener('fabric:add-triangle', () =>
+      addShape('triangle')
+    );
+    window.removeEventListener('fabric:add-arrow', () => addShape('arrow'));
+    window.removeEventListener('fabric:group', groupObjects);
+    window.removeEventListener('fabric:ungroup', ungroupObjects);
+    window.removeEventListener('fabric:clear', clearCanvas);
+    window.removeEventListener('fabric:delete', deleteObject);
+    window.removeEventListener(
+      'fabric:align-element',
+      handleAlignElement as EventListener
+    );
+    window.removeEventListener(
+      'fabric:text-transform',
+      handleTextTransform as EventListener
+    );
+  };
 };

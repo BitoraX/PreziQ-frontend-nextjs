@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import { toast } from '@/hooks/use-toast';
 import { collectionsApi } from '@/api/collections-api';
 import SlideShow, { CollectionData } from '@/components/slides/slide-show';
+import Loading from '@/components/common/loading';
 
 export default function SlidePage() {
    const params = useParams();
@@ -32,7 +33,7 @@ export default function SlidePage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen">Đang tải…</div>
+      <Loading/>
     );
   }
 

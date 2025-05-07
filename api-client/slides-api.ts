@@ -12,4 +12,7 @@ export const slidesApi = {
   ) {
     return axiosClient.put(`/slides/${slideId}/elements/${elementId}`, payload);
   },
+  deleteSlidesElement(slideId: string, elementId: string) {
+    return axiosClient.delete(`/slides/${slideId}/elements/${elementId}`);
+  }
 };

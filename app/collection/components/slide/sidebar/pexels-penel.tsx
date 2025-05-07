@@ -6,9 +6,12 @@ import PexelsSidebar from './pexels-sidebar';
 import { ImageIcon, X, Upload } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
+import { storageApi } from '@/api-client/storage-api'; // Import storageApi
+
 function PexelsPanel() {
   const [open, setOpen] = useState(true);
 
+  // Gửi sự kiện để thêm ảnh vào canvas
   const handleAddToCanvas = (url: string) => {
     const event = new CustomEvent('fabric:add-image', {
       detail: { url },
@@ -16,15 +19,20 @@ function PexelsPanel() {
     window.dispatchEvent(event);
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Xử lý khi người dùng chọn file từ máy tính
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const url = event.target?.result as string;
-        handleAddToCanvas(url);
-      };
-      reader.readAsDataURL(file);
+    if (!file) return; // Nếu không có file, thoát
+
+    try {
+      const response = await storageApi.uploadSingleFile(file, 'slides');
+  
+      const res = response.data as any;
+       const fileUrl = res.data.fileUrl;
+
+       handleAddToCanvas(fileUrl); // Gửi URL từ AWS S3 vào canvas
+    } catch (error) {
+      console.error('Error uploading file:', error);
     }
   };
 
@@ -41,25 +49,6 @@ function PexelsPanel() {
         </TabsList>
 
         <TabsContent value="pexels" className="mt-0">
-          {/* <button
-            className="flex items-center gap-2 text-sm px-3 py-2 w-full rounded-md hover:bg-muted border bg-background"
-            onClick={() => setOpen(true)}
-          >
-            <ImageIcon className="h-4 w-4" />
-            Browse Pexels Images
-          </button> */}
-          {/* <div className="fixed top-0 right-0 w-full h-screen bg-white dark:bg-gray-900 shadow-lg z-50 border-l">
-            <div className="flex items-center justify-between px-4 py-3 border-b">
-              <h2 className="text-sm font-medium">Choose from Pexels</h2>
-              <button
-                onClick={() => setOpen(false)}
-                className="text-muted-foreground hover:text-foreground"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-          </div> */}
-
           <div className="h-[calc(100%-3.5rem)]">
             <PexelsSidebar />
           </div>
@@ -81,18 +70,13 @@ function PexelsPanel() {
             <Button
               variant="outline"
               onClick={() => document.getElementById('image-upload')?.click()}
-              className="w-full"
+              className="w-full border bg-black text-white"
             >
               Select from computer
             </Button>
           </div>
         </TabsContent>
       </Tabs>
-
-      {/* Slide-over panel */}
-      {/* {open && (
-       
-      )} */}
     </div>
   );
 }

@@ -10,7 +10,7 @@ import { slidesApi } from '@/api-client/slides-api';
 import type { SlideElementPayload } from '@/types/slideInterface';
 import { debounce } from 'lodash';
 
-const HARD_SLIDE_ID = '2eb14abc-2a04-4439-bb8c-cba17889a0fb';
+const HARD_SLIDE_ID = '7da37c18-e78d-4c43-9321-079314ae378d';
 const HARD_ELEMENT_ID = 'a7c1c8de-cc1b-4aca-9db8-44c69bd13e9b';
 
 export interface FabricEditorProps {
@@ -30,7 +30,7 @@ const FabricEditor: React.FC<FabricEditorProps> = ({
   backgroundColor,
   width,
   height = 460,
-  zoom = 0.85,
+  zoom = 1,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -39,67 +39,60 @@ const FabricEditor: React.FC<FabricEditorProps> = ({
   // Hàm chung để cập nhật slide element
   const updateSlideElement = debounce((obj: fabric.Object) => {
     if (!obj || (obj.type !== 'image' && obj.type !== 'textbox')) return;
-
     const slideElementId = obj.get('slideElementId');
     if (!slideElementId) return;
-
-    const canvas = fabricCanvas.current; // Giả sử fabricCanvas là ref của canvas
+    const canvas = fabricCanvas.current;
     if (!canvas) return;
 
-    // const cw = canvas.getWidth() / canvas.getZoom(); // Kích thước gốc
-    // const ch = canvas.getHeight() / canvas.getZoom(); // Kích thước gốc
-    // const w = obj.getScaledWidth() / canvas.getZoom();
-    // const h = obj.getScaledHeight() / canvas.getZoom();
+    // lấy zoom & kích thước gốc của canvas (đã tính zoom)
+    const zoom = canvas.getZoom();
+    const cw = canvas.getWidth()! / zoom;
+    const ch = canvas.getHeight()! / zoom;
 
-    const cw = canvas.getWidth()!; // backstore width thực
-    const ch = canvas.getHeight()!; // backstore height thực
+    const rawLeft = obj.left! / zoom;
+    const rawTop = obj.top! / zoom;
 
-    // 1) Lấy bounding-box "thô" (chưa scale)
-    const rawW = obj.width!;
-    const rawH = obj.height!;
+    // tính w/h riêng cho image vs textbox
+    let w: number, h: number;
+    if (obj.type === 'image') {
+      // actual rendered size trên canvas
+      w = (obj as fabric.Image).getScaledWidth() / zoom;
+      h = (obj as fabric.Image).getScaledHeight() / zoom;
+    } else {
+      // textbox: giữ nguyên raw width/height
+      w = obj.width!;
+      h = obj.height!;
+    }
 
     const base = {
-      positionX: (obj.left! / cw) * 100,
-      positionY: (obj.top! / ch) * 100,
-      width: (rawW  / cw) * 100,
-      height: (rawH  / ch) * 100,
+      positionX: (rawLeft / cw) * 100,
+      positionY: (rawTop / ch) * 100,
+      width: (w / cw) * 100,
+      height: (h / ch) * 100,
       rotation: obj.angle || 0,
       layerOrder: canvas.getObjects().indexOf(obj),
     };
 
-    // console.log('Calculated dimensions for SlideElement:', {
-    //   width: (w / cw) * 100,
-    //   height: (h / ch) * 100,
-    // });
-
     let payload: SlideElementPayload;
-
     if (obj.type === 'textbox') {
-      const fullTextbox = obj.toJSON();
       payload = {
         ...base,
         slideElementType: 'TEXT',
-        content: JSON.stringify(fullTextbox),
+        content: JSON.stringify(obj.toJSON()),
       };
-    } else if (obj.type === 'image') {
+    } else {
       payload = {
         ...base,
         slideElementType: 'IMAGE',
-        sourceUrl: obj.get('sourceUrl') || (obj as fabric.FabricImage).getSrc(), // Lấy URL của ảnh
+        sourceUrl: obj.get('sourceUrl') || (obj as fabric.Image).getSrc(),
       };
-    } else {
-      return;
     }
 
     slidesApi
       .updateSlidesElement(HARD_SLIDE_ID, slideElementId, payload)
-      .then((res) => {
-        console.log('Cập nhật element thành công', res.data);
-      })
-      .catch((err) => {
-        console.error('Lỗi cập nhật element', err);
-      });
-  }, 500); // Debounce trong 300ms
+      .then((res) => console.log('Updated', res.data))
+      .catch((err) => console.error('Update failed', err));
+  }, 500);
 
   useEffect(() => {
     if (!canvasRef.current) return;
@@ -124,7 +117,22 @@ const FabricEditor: React.FC<FabricEditorProps> = ({
       if (e.key === 'Delete' || e.key === 'Backspace') {
         const activeObjects = canvas.getActiveObjects();
         if (activeObjects.length) {
-          activeObjects.forEach((obj) => canvas.remove(obj));
+          activeObjects.forEach((obj) => {
+            const slideElementId = obj.get('slideElementId');
+            if (slideElementId) {
+               canvas.remove(obj);
+              slidesApi
+                .deleteSlidesElement(HARD_SLIDE_ID, slideElementId)
+                .then((res) => {
+                  console.log('Xóa element thành công', res.data);
+                })
+                .catch((err) => {
+                  console.error('Lỗi xóa element', err);
+                });
+            } else {
+              canvas.remove(obj);
+            }
+          });
           canvas.discardActiveObject();
           canvas.requestRenderAll();
         }
