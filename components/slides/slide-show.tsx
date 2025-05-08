@@ -61,7 +61,7 @@ const SlideShow: React.FC<SlideShowProps> = ({ activities }) => {
   };
 
   // Render slide lên canvas
-  const renderSlide = (activity: Activity) => {
+  const renderSlide = async (activity: Activity) => {
     console.log('Slide elements:', activity.slide.slideElements);
     const canvas = fabricCanvas.current;
     if (!canvas) return;
@@ -76,39 +76,61 @@ const SlideShow: React.FC<SlideShowProps> = ({ activities }) => {
       (a, b) => a.layerOrder - b.layerOrder
     );
 
-    sortedElements.forEach((element) => {
-      const {
-        positionX,
-        positionY,
-        width,
-        height,
-        rotation,
-        slideElementType,
-        content,
-        sourceUrl,
-      } = element;
-      const canvasWidth = canvas.getWidth();
-      const canvasHeight = canvas.getHeight();
+    // Load all images first
+    const imagePromises = sortedElements
+      .filter(
+        (element) => element.slideElementType === 'IMAGE' && element.sourceUrl
+      )
+      .map(
+        (element) =>
+          new Promise<{ element: SlideElement; imgElement: HTMLImageElement }>(
+            (resolve, reject) => {
+              const imgElement = new Image();
+              imgElement.onload = () => resolve({ element, imgElement });
+              imgElement.onerror = (err) => reject(err);
+              imgElement.src = element.sourceUrl!;
+            }
+          )
+      );
 
-      // Tính toán vị trí và kích thước thực tế
-      const left = (positionX / 100) * canvasWidth;
-      const top = (positionY / 100) * canvasHeight;
-      const elementWidth = (width / 100) * canvasWidth;
-      const elementHeight = (height / 100) * canvasHeight;
+    try {
+      const loadedImages = await Promise.all(imagePromises);
 
-      if (slideElementType === 'IMAGE' && sourceUrl) {
-        console.log('Bắt đầu tải ảnh:', sourceUrl);
-        const imgElement = new Image();
-        imgElement.onload = () => {
-          console.log('Ảnh tải thành công qua Image:', sourceUrl, {
+      // Add all elements to canvas in order
+      sortedElements.forEach((element) => {
+        const {
+          positionX,
+          positionY,
+          width,
+          height,
+          rotation,
+          slideElementType,
+          content,
+          sourceUrl,
+        } = element;
+        const canvasWidth = canvas.getWidth();
+        const canvasHeight = canvas.getHeight();
+
+        // Tính toán vị trí và kích thước thực tế
+        const left = (positionX / 100) * canvasWidth;
+        const top = (positionY / 100) * canvasHeight;
+        const elementWidth = (width / 100) * canvasWidth;
+        const elementHeight = (height / 100) * canvasHeight;
+
+        if (slideElementType === 'IMAGE' && sourceUrl) {
+          const loadedImage = loadedImages.find(
+            (img) => img.element.sourceUrl === sourceUrl
+          );
+          if (!loadedImage) {
+            console.error(`Không tìm thấy ảnh đã tải cho ${sourceUrl}`);
+            return;
+          }
+          const { imgElement } = loadedImage;
+          console.log('Ảnh tải thành công:', sourceUrl, {
             width: imgElement.width,
             height: imgElement.height,
           });
           const img = new fabric.Image(imgElement);
-          console.log('Ảnh tạo qua Fabric:', {
-            width: img.width,
-            height: img.height,
-          });
           if (!img.width || !img.height) {
             console.error(`Lỗi: Ảnh không có kích thước hợp lệ - ${sourceUrl}`);
             return;
@@ -125,57 +147,49 @@ const SlideShow: React.FC<SlideShowProps> = ({ activities }) => {
           });
           console.log('Thêm ảnh vào canvas:', { left, top, scaleX, scaleY });
           canvas.add(img);
-          canvas.renderAll();
-          console.log(
-            'Objects trong canvas (sau khi thêm ảnh):',
-            canvas.getObjects()
-          );
-        };
-        imgElement.onerror = (err) => {
-          console.error(`Lỗi tải ảnh qua Image từ ${sourceUrl}:`, err);
-        };
-        imgElement.src = sourceUrl;
-      } else if (slideElementType === 'TEXT' && content) {
-        const json = JSON.parse(content);
-        // Scale fontSize từ phần trăm sang pixel dựa trên canvasWidth mới
-        const fontSizePixel = (json.fontSize / 100) * canvasWidth;
-        // Lọc các thuộc tính hợp lệ, loại bỏ 'type' và 'version'
-        const { type, version, ...validProps } = json;
-        const textbox = new fabric.Textbox(json.text, {
-          ...validProps,
-          fontSize: fontSizePixel, // Áp dụng fontSize đã scale
-          left,
-          top,
-          width: elementWidth,
-          height: elementHeight,
-          angle: rotation,
-          selectable: false,
-        });
-
-        // Scale fontSize trong styles nếu có
-        if (json.styles && json.styles.length > 0) {
-          json.styles.forEach((style: any) => {
-            if (style.style.fontSize) {
-              const scaledFontSize = (style.style.fontSize / 100) * canvasWidth;
-              textbox.setSelectionStyles(
-                { ...style.style, fontSize: scaledFontSize },
-                style.start,
-                style.end
-              );
-            } else {
-              textbox.setSelectionStyles(style.style, style.start, style.end);
-            }
+        } else if (slideElementType === 'TEXT' && content) {
+          const json = JSON.parse(content);
+          const fontSizePixel = (json.fontSize / 100) * canvasWidth;
+          const { type, version, ...validProps } = json;
+          const textbox = new fabric.Textbox(json.text, {
+            ...validProps,
+            fontSize: fontSizePixel,
+            left,
+            top,
+            width: elementWidth,
+            height: elementHeight,
+            angle: rotation,
+            selectable: false,
           });
-        }
 
-        canvas.add(textbox);
-        canvas.renderAll();
-        console.log(
-          'Objects trong canvas (sau khi thêm text):',
-          canvas.getObjects()
-        );
-      }
-    });
+          if (json.styles && json.styles.length > 0) {
+            json.styles.forEach((style: any) => {
+              if (style.style.fontSize) {
+                const scaledFontSize =
+                  (style.style.fontSize / 100) * canvasWidth;
+                textbox.setSelectionStyles(
+                  { ...style.style, fontSize: scaledFontSize },
+                  style.start,
+                  style.end
+                );
+              } else {
+                textbox.setSelectionStyles(style.style, style.start, style.end);
+              }
+            });
+          }
+
+          canvas.add(textbox);
+        }
+      });
+
+      canvas.renderAll();
+      console.log(
+        'Objects trong canvas (sau khi render):',
+        canvas.getObjects()
+      );
+    } catch (err) {
+      console.error('Lỗi tải ảnh:', err);
+    }
   };
 
   // Khởi tạo canvas và render slide hiện tại

@@ -1,126 +1,180 @@
 'use client';
 
-import { Edit, Trash2, Trophy } from 'lucide-react';
+import type { Achievement } from '../data/schema';
+import { Badge } from '@/components/ui/badge';
 import {
   Card,
   CardContent,
   CardFooter,
   CardHeader,
 } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
-import type { Achievement } from '../data/schema';
+import { Edit, Trash2, Award, Star } from 'lucide-react';
+import { useAchievements } from '../context/achievements-context';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { cn } from '@/lib/utils';
+import { motion } from 'framer-motion';
 
 interface AchievementCardProps {
   achievement: Achievement;
+  isSelected: boolean;
+  onSelect: (selected: boolean) => void;
 }
 
-export function AchievementCard({ achievement }: AchievementCardProps) {
+export function AchievementCard({
+  achievement,
+  isSelected,
+  onSelect,
+}: AchievementCardProps) {
+
+
+  const { setOpen, setCurrentRow } = useAchievements();
+
   const handleEdit = () => {
-    window.dispatchEvent(
-      new CustomEvent('open-achievement-dialog', {
-        detail: { type: 'edit', achievement },
-      })
-    );
+    setCurrentRow(achievement);
+    setOpen('edit');
   };
 
   const handleDelete = () => {
-    window.dispatchEvent(
-      new CustomEvent('open-achievement-dialog', {
-        detail: { type: 'delete', achievement },
-      })
-    );
+    setCurrentRow(achievement);
+    setOpen('delete');
+  };
+
+  // Format date
+  const formatDate = (dateString?: string) => {
+    if (!dateString) return 'N/A';
+
+    try {
+      let date: Date;
+
+      if (dateString.includes(' ')) {
+        const [datePart, timePart] = dateString.split(' ');
+        const [time, period] = timePart.split(' ');
+        const [hours, minutes] = time.split(':');
+        const hour = Number.parseInt(hours);
+        const adjustedHour =
+          period === 'PM' && hour !== 12
+            ? hour + 12
+            : period === 'AM' && hour === 12
+            ? 0
+            : hour;
+        const formattedTime = `${adjustedHour
+          .toString()
+          .padStart(2, '0')}:${minutes}`;
+        const isoString = `${datePart}T${formattedTime}`;
+        date = new Date(isoString);
+      } else if (dateString.includes('T')) {
+        date = new Date(dateString);
+      } else {
+        date = new Date(Number.parseInt(dateString));
+      }
+
+      if (isNaN(date.getTime())) throw new Error('Ngày không hợp lệ');
+
+      return date
+        .toLocaleString('vi-VN', {
+          day: 'numeric',
+          month: 'long',
+          year: 'numeric',
+          hour12: false,
+          timeZone: 'Asia/Ho_Chi_Minh',
+        })
+        .replace('lúc ', '');
+    } catch (error) {
+      console.error('Lỗi khi định dạng ngày:', error);
+      return 'N/A';
+    }
   };
 
   return (
-    <Card className="overflow-hidden transition-all hover:shadow-md">
-      <CardHeader className="p-0">
-        <div className="bg-gradient-to-r from-slate-800 to-slate-700 h-24 flex items-center justify-center relative">
-          <div className="absolute inset-0 bg-black/20"></div>
-          <div className="relative z-10 flex items-center justify-center">
-            {achievement.iconUrl ? (
-              <img
-                src={achievement.iconUrl || '/placeholder.svg'}
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3 }}
+      whileHover={{ scale: 1.02 }}
+      className="h-full"
+    >
+      <Card
+        className={cn(
+          'h-full border-slate-200 transition-all duration-200 hover:shadow-md',
+          isSelected && 'border-primary bg-primary/5'
+        )}
+      >
+        <CardHeader className="relative pb-2">
+          <div className="absolute top-2 left-2">
+            <Checkbox
+              checked={isSelected}
+              onCheckedChange={onSelect}
+              aria-label="Select achievement"
+              className="h-5 w-5"
+            />
+          </div>
+          <div className="flex justify-center pt-4">
+            <Avatar className="h-20 w-20 rounded-md border-2 border-slate-200">
+              <AvatarImage
+                src={
+                  achievement.iconUrl || '/placeholder.svg?height=80&width=80'
+                }
                 alt={achievement.name}
-                className="h-16 w-16 object-contain"
-                onError={(e) => {
-                  const target = e.currentTarget;
-                  target.src = '';
-                  target.style.display = 'none';
-                  const parent = target.parentElement;
-                  if (parent) {
-                    const fallbackIcon = document.createElement('div');
-                    fallbackIcon.innerHTML =
-                      '<svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 text-amber-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path><path d="M4 22h16"></path><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"></path><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"></path><path d="M9 9h6"></path><path d="M9 6h6"></path></svg>';
-                    parent.appendChild(fallbackIcon);
-                  }
-                }}
               />
-            ) : (
-              <Trophy className="h-16 w-16 text-amber-300" />
+              <AvatarFallback className="rounded-md bg-primary/10">
+                <Award className="h-10 w-10 text-primary" />
+              </AvatarFallback>
+            </Avatar>
+          </div>
+          <div className="mt-2 text-center">
+            <h3
+              className="font-semibold text-lg truncate"
+              title={achievement.name}
+            >
+              {achievement.name}
+            </h3>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="min-h-[60px] text-sm text-slate-600">
+            {achievement.description || (
+              <span className="text-slate-400 italic">Không có mô tả</span>
             )}
           </div>
-        </div>
-      </CardHeader>
-      <CardContent className="p-4">
-        <div className="flex flex-col space-y-2">
           <div className="flex items-center justify-between">
-            <h3 className="font-bold text-lg truncate">{achievement.name}</h3>
             <Badge
               variant="outline"
-              className="bg-amber-100 text-amber-800 hover:bg-amber-200"
+              className="bg-amber-50 text-amber-700 hover:bg-amber-100 flex items-center gap-1"
             >
-              {achievement.requiredPoints} điểm
+              <Star className="h-3 w-3" />
+              <span>{achievement.requiredPoints} điểm</span>
+            </Badge>
+            <Badge
+              variant="outline"
+              className="bg-slate-50 text-slate-700 hover:bg-slate-100"
+            >
+              {formatDate(achievement.createdAt)}
             </Badge>
           </div>
-          <p className="text-muted-foreground text-sm line-clamp-2">
-            {achievement.description}
-          </p>
-        </div>
-      </CardContent>
-      <CardFooter className="p-4 pt-0 flex justify-end gap-2">
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={handleEdit}
-                className="h-8 w-8 p-0 hover:bg-amber-100 hover:text-amber-700 transition-colors rounded-full"
-              >
-                <Edit className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="top" className="bg-slate-800 text-white">
-              <p>Chỉnh sửa</p>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={handleDelete}
-                className="h-8 w-8 p-0 hover:bg-red-100 hover:text-red-700 transition-colors rounded-full"
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="top" className="bg-slate-800 text-white">
-              <p>Xóa</p>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      </CardFooter>
-    </Card>
+        </CardContent>
+        <CardFooter className="flex justify-end gap-2 pt-2 border-t">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleEdit}
+            className="text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+          >
+            <Edit className="h-4 w-4 mr-1" />
+            Sửa
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleDelete}
+            className="text-red-600 hover:text-red-700 hover:bg-red-50"
+          >
+            <Trash2 className="h-4 w-4 mr-1" />
+            Xóa
+          </Button>
+        </CardFooter>
+      </Card>
+    </motion.div>
   );
 }

@@ -1,17 +1,17 @@
 'use client';
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import * as fabric from 'fabric';
 import { useFabricCanvas } from './useFabricCanvas';
 import { initFabricEvents } from './useFabricEvents';
 import { ToolbarHandlers } from './useToolbarHandlers';
 import { EditorContextMenu } from '../sidebar/editor-context-menu';
 import { slidesApi } from '@/api-client/slides-api';
+import { storageApi } from '@/api-client/storage-api';
 import type { SlideElementPayload } from '@/types/slideInterface';
 import { debounce } from 'lodash';
 
-const HARD_SLIDE_ID = '6b6409e0-6159-4825-9dda-82caf07e9e6c';
-const HARD_ELEMENT_ID = 'a7c1c8de-cc1b-4aca-9db8-44c69bd13e9b';
+const HARD_SLIDE_ID = 'b6cb121c-1f5c-461b-b183-098468be7050';
 const ORIGINAL_CANVAS_WIDTH = 812;
 
 export interface FabricEditorProps {
@@ -36,6 +36,55 @@ const FabricEditor: React.FC<FabricEditorProps> = ({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const { fabricCanvas, initCanvas } = useFabricCanvas();
+  const [history, setHistory] = useState<string[]>([]); // Lưu lịch sử canvas dưới dạng JSON
+  const [historyIndex, setHistoryIndex] = useState<number>(-1); // Chỉ số hiện tại trong lịch sử
+  const isProcessingRef = useRef(false); // Tránh vòng lặp khi xử lý Undo/Redo
+
+  console.log('slideTitle', slideTitle);
+  
+  // Hàm lưu trạng thái canvas vào lịch sử
+  const saveState = () => {
+    if (isProcessingRef.current) return; // Bỏ qua nếu đang xử lý Undo/Redo
+    const canvas = fabricCanvas.current;
+    if (!canvas) return;
+
+    const json = JSON.stringify(canvas.toJSON()); // Loại bỏ tham số
+    setHistory((prev) => {
+      // Xóa các trạng thái sau historyIndex nếu có (tránh nhánh lịch sử)
+      const newHistory = prev.slice(0, historyIndex + 1);
+      newHistory.push(json);
+      return newHistory;
+    });
+    setHistoryIndex((prev) => prev + 1);
+  };
+
+  // Hàm khôi phục trạng thái canvas từ JSON
+  const restoreState = (json: string) => {
+    const canvas = fabricCanvas.current;
+    if (!canvas) return;
+
+    isProcessingRef.current = true; // Đánh dấu đang xử lý
+    canvas.loadFromJSON(json, () => {
+      canvas.renderAll();
+      isProcessingRef.current = false; // Kết thúc xử lý
+    });
+  };
+
+  // Hàm Undo
+  const undo = () => {
+    if (historyIndex <= 0) return; // Không có trạng thái để Undo
+    const newIndex = historyIndex - 1;
+    setHistoryIndex(newIndex);
+    restoreState(history[newIndex]);
+  };
+
+  // Hàm Redo
+  const redo = () => {
+    if (historyIndex >= history.length - 1) return; // Không có trạng thái để Redo
+    const newIndex = historyIndex + 1;
+    setHistoryIndex(newIndex);
+    restoreState(history[newIndex]);
+  };
 
   // Hàm chung để cập nhật slide element
   const updateSlideElement = debounce((obj: fabric.Object) => {
@@ -45,7 +94,6 @@ const FabricEditor: React.FC<FabricEditorProps> = ({
     const canvas = fabricCanvas.current;
     if (!canvas) return;
 
-    // Lấy zoom & kích thước gốc của canvas (đã tính zoom)
     const zoom = canvas.getZoom();
     const cw = canvas.getWidth()! / zoom;
     const ch = canvas.getHeight()! / zoom;
@@ -53,14 +101,11 @@ const FabricEditor: React.FC<FabricEditorProps> = ({
     const rawLeft = obj.left! / zoom;
     const rawTop = obj.top! / zoom;
 
-    // Tính w/h riêng cho image vs textbox
     let w: number, h: number;
     if (obj.type === 'image') {
-      // Actual rendered size trên canvas
       w = (obj as fabric.Image).getScaledWidth() / zoom;
       h = (obj as fabric.Image).getScaledHeight() / zoom;
     } else {
-      // Textbox: giữ nguyên raw width/height
       w = obj.width!;
       h = (obj as fabric.Textbox).getScaledHeight() / zoom;
     }
@@ -76,14 +121,12 @@ const FabricEditor: React.FC<FabricEditorProps> = ({
 
     let payload: SlideElementPayload;
     if (obj.type === 'textbox') {
-      // Chuyển fontSize thành phần trăm so với ORIGINAL_CANVAS_WIDTH
       const fontSizePercent =
         ((obj as fabric.Textbox).fontSize! / ORIGINAL_CANVAS_WIDTH) * 100;
       const textboxJson = {
         ...obj.toJSON(),
-        fontSize: fontSizePercent, // Lưu fontSize dưới dạng phần trăm
+        fontSize: fontSizePercent,
       };
-      // Nếu có styles, chuyển fontSize trong styles thành phần trăm
       if (textboxJson.styles && Object.keys(textboxJson.styles).length > 0) {
         for (const lineIndex in textboxJson.styles) {
           const line = textboxJson.styles[lineIndex];
@@ -122,8 +165,8 @@ const FabricEditor: React.FC<FabricEditorProps> = ({
       backgroundColor || '#fff',
       width
     );
-    canvas.setDimensions({ width: width, height: height }); // <-- set chiều cao gốc
-    canvas.setZoom(zoom); // <-- scale giống Canva Editor
+    canvas.setDimensions({ width: width, height: height });
+    canvas.setZoom(zoom);
     const { title, content } = initFabricEvents(canvas, onUpdate);
     const cleanupToolbar = ToolbarHandlers(canvas, title, content);
 
@@ -134,12 +177,46 @@ const FabricEditor: React.FC<FabricEditorProps> = ({
         target.isContentEditable;
       if (isInput) return;
 
+      // Xử lý Ctrl + Z (Undo) và Ctrl + Y / Ctrl + Shift + Z (Redo)
+      if (e.ctrlKey) {
+        if (e.key === 'z' || e.key === 'Z') {
+          if (e.shiftKey) {
+            // Ctrl + Shift + Z: Redo
+            e.preventDefault();
+            redo();
+          } else {
+            // Ctrl + Z: Undo
+            e.preventDefault();
+            undo();
+          }
+        } else if (e.key === 'y' || e.key === 'Y') {
+          // Ctrl + Y: Redo
+          e.preventDefault();
+          redo();
+        }
+      }
+
       if (e.key === 'Delete' || e.key === 'Backspace') {
         const activeObjects = canvas.getActiveObjects();
         if (activeObjects.length) {
           activeObjects.forEach((obj) => {
             const slideElementId = obj.get('slideElementId');
             if (slideElementId) {
+              if (obj.type === 'image') {
+                const src = (obj as fabric.Image).getSrc();
+                if (src && src.includes('s3.amazonaws.com')) {
+                  const filePath = src.split('s3.amazonaws.com/')[1];
+                  storageApi
+                    .deleteSingleFile(filePath)
+                    .then((res) => {
+                      console.log('Xóa file từ AWS S3 thành công:', res);
+                    })
+                    .catch((err) => {
+                      console.error('Lỗi khi xóa file từ AWS S3:', err);
+                    });
+                }
+              }
+
               canvas.remove(obj);
               slidesApi
                 .deleteSlidesElement(HARD_SLIDE_ID, slideElementId)
@@ -155,49 +232,35 @@ const FabricEditor: React.FC<FabricEditorProps> = ({
           });
           canvas.discardActiveObject();
           canvas.requestRenderAll();
+          saveState(); // Lưu trạng thái sau khi xóa
         }
       }
     };
 
-    // Sự kiện khi đối tượng được chọn
-    canvas.on('selection:created', (e) => {
-      const active = e.selected?.[0];
-      if (active && active.type === 'image') {
-        console.log('Thuộc tính của hình ảnh được chọn:');
-        console.log(JSON.stringify(active.toJSON(), null, 2));
-      }
-    });
-
-    // Sự kiện khi lựa chọn được cập nhật
-    canvas.on('selection:updated', (e) => {
-      const active = e.selected?.[0];
-      if (active && active.type === 'image') {
-        console.log('Thuộc tính của hình ảnh được cập nhật:');
-        console.log(JSON.stringify(active.toJSON(), null, 2));
-      }
-    });
-
-    // Thêm sự kiện khi đối tượng được tạo
+    // Sự kiện để theo dõi thay đổi và lưu lịch sử
     canvas.on('object:added', (e) => {
       const obj = e.target;
       if (obj) {
-        console.log('Đối tượng vừa được tạo:');
-        console.log(JSON.stringify(obj.toJSON(), null, 2));
+        console.log(
+          'Đối tượng vừa được tạo:',
+          JSON.stringify(obj.toJSON(), null, 2)
+        );
+        saveState();
       }
     });
 
-    // Sự kiện khi đối tượng được thay đổi (di chuyển, thay đổi kích thước, xoay, v.v.)
     canvas.on('object:modified', (e) => {
       const obj = e.target;
       if (!obj) return;
 
-      console.log('Đối tượng vừa được thay đổi:');
-      console.log(JSON.stringify(obj.toJSON(), null, 2));
+      console.log(
+        'Đối tượng vừa được thay đổi:',
+        JSON.stringify(obj.toJSON(), null, 2)
+      );
 
       const isNew = obj.get('isNew');
       const isCreating = canvas.get('isCreating');
 
-      // Nếu vừa tạo xong hoặc đang tạo, không gọi update
       if (isNew || isCreating) {
         if (isNew) {
           obj.set('isNew', false);
@@ -206,45 +269,49 @@ const FabricEditor: React.FC<FabricEditorProps> = ({
       }
 
       updateSlideElement(obj);
+      saveState();
     });
 
-    // Sự kiện khi nội dung văn bản thay đổi
     canvas.on('text:changed', (e) => {
       const obj = e.target as fabric.Textbox;
       if (!obj || obj.type !== 'textbox') return;
 
       console.log('Text changed:', obj.toJSON());
-
       updateSlideElement(obj);
+      saveState();
     });
 
-    // Sự kiện khi kiểu dáng hoặc thay đổi (bold, italic, underline, v.v.)
     canvas.on('text:selection:changed', (e) => {
       const obj = e.target as fabric.Textbox;
       if (!obj || obj.type !== 'textbox') return;
 
       console.log('Text selection changed:', obj.toJSON());
-
       updateSlideElement(obj);
+      saveState();
     });
 
-    // Sự kiện khi thoát chế độ chỉnh sửa
     canvas.on('text:editing:exited', (e) => {
       const obj = e.target as fabric.Textbox;
       if (!obj || obj.type !== 'textbox') return;
 
       console.log('Text editing exited:', obj.toJSON());
-
       updateSlideElement(obj);
+      saveState();
     });
 
-    // Ngăn Fabric.js chèn URL vào textbox nhưng không chặn sự kiện hoàn toàn
     canvas.on('drop', (e) => {
       const target = e.target;
       console.log('Đối tượng target: ', target);
       if (target && target instanceof fabric.Textbox) {
-        e.e.preventDefault(); // Ngăn Fabric.js chèn URL vào textbox
-        return false; // Ngăn Fabric.js xử lý thêm
+        e.e.preventDefault();
+        return false;
+      }
+    });
+
+    // Lưu trạng thái ban đầu
+    canvas.on('after:render', () => {
+      if (history.length === 0) {
+        saveState();
       }
     });
 
@@ -264,7 +331,7 @@ const FabricEditor: React.FC<FabricEditorProps> = ({
           if (obj instanceof fabric.Textbox) {
             obj.lockMovementX = true;
             obj.lockMovementY = true;
-            obj.set('editable', false); // Tạm thời vô hiệu hóa khả năng chỉnh sửa
+            obj.set('editable', false);
           }
         });
       }
@@ -275,7 +342,7 @@ const FabricEditor: React.FC<FabricEditorProps> = ({
           if (obj instanceof fabric.Textbox) {
             obj.lockMovementX = false;
             obj.lockMovementY = false;
-            obj.set('editable', true); // Khôi phục khả năng chỉnh sửa
+            obj.set('editable', true);
           }
         });
       }
@@ -290,7 +357,6 @@ const FabricEditor: React.FC<FabricEditorProps> = ({
 
   useEffect(() => {
     const handleDragOver = (e: DragEvent) => {
-      // Thoát chế độ chỉnh sửa của tất cả textbox khi kéo qua
       if (fabricCanvas.current) {
         fabricCanvas.current.getObjects().forEach((obj) => {
           if (obj instanceof fabric.Textbox && obj.isEditing) {
@@ -333,7 +399,7 @@ const FabricEditor: React.FC<FabricEditorProps> = ({
     e.stopPropagation();
 
     const url = e.dataTransfer.getData('image-url');
-    console.log('image-url: ', url); // Kiểm tra giá trị URL
+    console.log('image-url: ', url);
     if (!url || !fabricCanvas.current) return;
 
     const canvas = fabricCanvas.current;
@@ -400,9 +466,9 @@ const FabricEditor: React.FC<FabricEditorProps> = ({
         onDragOver={(e) => e.preventDefault()}
         style={{
           position: 'relative',
-          width: `${width}px`, // px gốc
-          height: `${height}px`, // px gốc
-          overflow: 'hidden', // zoom edit
+          width: `${width}px`,
+          height: `${height}px`,
+          overflow: 'hidden',
           transformOrigin: 'top left',
         }}
       >

@@ -1,7 +1,9 @@
 export interface Achievement {
-  id: string;
+  achievementId: string;
   name: string;
-  description: string;
+  description?: string;
   iconUrl?: string;
   requiredPoints: number;
+  createdAt?: string;
+  updatedAt?: string;
 }

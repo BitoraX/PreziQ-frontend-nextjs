@@ -1,93 +1,185 @@
 'use client';
 
-import { createContext, useContext, type ReactNode } from 'react';
-import { toast } from '@/hooks/use-toast';
+import type React from 'react';
+import { useState, useCallback } from 'react';
+import useDialogState from '@/hooks/use-dialog-state';
 import type { Achievement } from '../data/schema';
+import { createContext, useContext } from 'react';
+import { toast } from '@/hooks/use-toast';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { achievementsApi } from '@/api-client';
 
-type AchievementContextType = {
-  createAchievement: (achievement: Omit<Achievement, 'id'>) => Promise<void>;
-  updateAchievement: (
-    id: string,
-    achievement: Partial<Achievement>
-  ) => Promise<void>;
+type AchievementsDialogType = 'add' | 'edit' | 'delete';
+
+interface AchievementsContextType {
+  achievements: Achievement[];
+  isLoading: boolean;
+  error: string | null;
+  refetch: () => void;
+  createAchievement: (data: any) => Promise<void>;
+  updateAchievement: (id: string, data: any) => Promise<void>;
   deleteAchievement: (id: string) => Promise<void>;
-};
+  open: AchievementsDialogType | null;
+  setOpen: (type: AchievementsDialogType | null) => void;
+  currentRow: Achievement | null;
+  setCurrentRow: (achievement: Achievement | null) => void;
+}
 
-const AchievementContext = createContext<AchievementContextType | undefined>(
+const AchievementsContext = createContext<AchievementsContextType | undefined>(
   undefined
 );
 
-export function AchievementProvider({ children }: { children: ReactNode }) {
-  // Trong thực tế, các hàm này sẽ gọi API để thực hiện CRUD
-  const createAchievement = async (achievement: Omit<Achievement, 'id'>) => {
-    try {
-      console.log('Creating achievement:', achievement);
-      // Gọi API tạo thành tựu mới
-      return Promise.resolve();
-    } catch (error) {
-      console.error('Error creating achievement:', error);
-      toast({
-        title: 'Lỗi',
-        description: 'Không thể tạo thành tựu mới. Vui lòng thử lại.',
-        variant: 'destructive',
-      });
-      return Promise.reject(error);
-    }
-  };
+interface Props {
+  children: React.ReactNode;
+}
 
-  const updateAchievement = async (
-    id: string,
-    achievement: Partial<Achievement>
-  ) => {
-    try {
-      console.log('Updating achievement:', id, achievement);
-      // Gọi API cập nhật thành tựu
-      return Promise.resolve();
-    } catch (error) {
-      console.error('Error updating achievement:', error);
-      toast({
-        title: 'Lỗi',
-        description: 'Không thể cập nhật thành tựu. Vui lòng thử lại.',
-        variant: 'destructive',
-      });
-      return Promise.reject(error);
-    }
-  };
+const AchievementsProvider = ({ children }: Props) => {
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useDialogState<AchievementsDialogType>(null);
+  const [currentRow, setCurrentRow] = useState<Achievement | null>(null);
 
-  const deleteAchievement = async (id: string) => {
-    try {
-      console.log('Deleting achievement:', id);
-      // Gọi API xóa thành tựu
-      return Promise.resolve();
-    } catch (error) {
-      console.error('Error deleting achievement:', error);
+  // Fetch achievements with React Query
+  const {
+    data: achievements = [],
+    isLoading,
+    error,
+    refetch,
+  } = useQuery({
+    queryKey: ['achievements'],
+    queryFn: async () => {
+      try {
+        const response = await achievementsApi.getAllAchievements();
+        console.log('res: ', response);
+        return response;
+        
+      } catch (error) {
+        throw new Error('Không thể tải danh sách thành tựu');
+      }
+    },
+    staleTime: 5 * 60 * 1000, // Cache trong 5 phút
+    gcTime: 30 * 60 * 1000, // Giữ cache 30 phút
+  });
+
+  // Mutation cho việc tạo achievement mới
+  const createAchievementMutation = useMutation({
+    mutationFn: async (achievementData: any) => {
+      const response = await achievementsApi.createAchievement(achievementData);
+      return response;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['achievements'] });
+      toast({
+        title: 'Thành công',
+        description: 'Tạo thành tựu thành công',
+      });
+      setOpen(null);
+    },
+    onError: (error: Error) => {
       toast({
         title: 'Lỗi',
-        description: 'Không thể xóa thành tựu. Vui lòng thử lại.',
+        description: error.message,
         variant: 'destructive',
       });
-      return Promise.reject(error);
-    }
-  };
+    },
+  });
+
+  // Mutation cho việc cập nhật achievement
+  const updateAchievementMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+      const response = await achievementsApi.updateAchievement(id, data);
+      return response;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['achievements'] });
+      toast({
+        title: 'Thành công',
+        description: 'Cập nhật thông tin thành tựu thành công',
+      });
+      setOpen(null);
+      setCurrentRow(null);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Lỗi',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
+  // Mutation cho việc xóa achievement
+  const deleteAchievementMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const response = await achievementsApi.deleteAchievement(id);
+      return response;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['achievements'] });
+      toast({
+        title: 'Thành công',
+        description: 'Xóa thành tựu thành công',
+      });
+      setOpen(null);
+      setCurrentRow(null);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Lỗi',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const createAchievement = useCallback(
+    async (data: any) => {
+      await createAchievementMutation.mutateAsync(data);
+    },
+    [createAchievementMutation]
+  );
+
+  const updateAchievement = useCallback(
+    async (id: string, data: any) => {
+      await updateAchievementMutation.mutateAsync({ id, data });
+    },
+    [updateAchievementMutation]
+  );
+
+  const deleteAchievement = useCallback(
+    async (id: string) => {
+      await deleteAchievementMutation.mutateAsync(id);
+    },
+    [deleteAchievementMutation]
+  );
 
   return (
-    <AchievementContext.Provider
+    <AchievementsContext.Provider
       value={{
+        achievements,
+        isLoading,
+        error: error as string | null,
+        refetch,
         createAchievement,
         updateAchievement,
         deleteAchievement,
+        open,
+        setOpen,
+        currentRow,
+        setCurrentRow,
       }}
     >
       {children}
-    </AchievementContext.Provider>
+    </AchievementsContext.Provider>
   );
-}
+};
+
+export { AchievementsProvider };
 
 export function useAchievements() {
-  const context = useContext(AchievementContext);
+  const context = useContext(AchievementsContext);
   if (context === undefined) {
     throw new Error(
-      'useAchievements must be used within an AchievementProvider'
+      'useAchievements must be used within a AchievementsProvider'
     );
   }
   return context;

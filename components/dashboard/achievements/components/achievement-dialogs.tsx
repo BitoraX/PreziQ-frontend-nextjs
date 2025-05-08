@@ -1,66 +1,46 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useAchievements } from '../context/achievements-context';
 import { AchievementActionDialog } from './achievement-action-dialog';
 import { AchievementDeleteDialog } from './achievement-delete-dialog';
-import type { Achievement } from '../data/schema';
-import { useAchievements } from '../context/achievements-context';
 
 export function AchievementDialogs() {
-  const { createAchievement, updateAchievement, deleteAchievement } =
-    useAchievements();
-  const [dialogState, setDialogState] = useState<{
-    type: 'add' | 'edit' | 'delete' | null;
-    achievement: Achievement | null;
-  }>({
-    type: null,
-    achievement: null,
-  });
-
-  useEffect(() => {
-    const handleOpenDialog = (e: Event) => {
-      const customEvent = e as CustomEvent;
-      setDialogState({
-        type: customEvent.detail.type,
-        achievement: customEvent.detail.achievement || null,
-      });
-    };
-
-    window.addEventListener('open-achievement-dialog', handleOpenDialog);
-    return () => {
-      window.removeEventListener('open-achievement-dialog', handleOpenDialog);
-    };
-  }, []);
-
-  const handleCloseDialog = () => {
-    setDialogState({ type: null, achievement: null });
-  };
+  const { open, setOpen, currentRow, setCurrentRow } = useAchievements();
 
   return (
     <>
       <AchievementActionDialog
-        open={dialogState.type === 'add'}
-        onOpenChange={(open) => !open && handleCloseDialog()}
-        onSubmit={createAchievement}
+        key="achievement-add"
+        open={open === 'add'}
+        onOpenChange={(state) => {
+          if (!state) setOpen(null);
+        }}
       />
 
-      {dialogState.achievement && (
+      {currentRow && (
         <>
           <AchievementActionDialog
-            open={dialogState.type === 'edit'}
-            onOpenChange={(open) => !open && handleCloseDialog()}
-            achievement={dialogState.achievement}
-            onSubmit={(values) =>
-              updateAchievement(dialogState.achievement!.id, values)
-            }
-            isEdit
+            key={`achievement-edit-${currentRow.achievementId}`}
+            open={open === 'edit'}
+            onOpenChange={(state) => {
+              if (!state) {
+                setOpen(null);
+                setCurrentRow(null);
+              }
+            }}
+            currentRow={currentRow}
           />
 
           <AchievementDeleteDialog
-            open={dialogState.type === 'delete'}
-            onOpenChange={(open) => !open && handleCloseDialog()}
-            achievement={dialogState.achievement}
-            onDelete={deleteAchievement}
+            key={`achievement-delete-${currentRow.achievementId}`}
+            open={open === 'delete'}
+            onOpenChange={(state) => {
+              if (!state) {
+                setOpen(null);
+                setCurrentRow(null);
+              }
+            }}
+            currentRow={currentRow}
           />
         </>
       )}

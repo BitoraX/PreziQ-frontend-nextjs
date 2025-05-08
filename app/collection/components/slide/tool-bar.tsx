@@ -7,11 +7,9 @@ import {
   Plus,
   ImagePlus,
   Trash2,
-  Paintbrush,
   ChevronRight,
 } from 'lucide-react';
 import PexelsPanel from './sidebar/pexels-penel';
-import ColorToolbar from './sidebar/color-toolbar';
 import { TextEditorToolbar } from './sidebar/text-editor-toolbar';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
@@ -122,24 +120,6 @@ export const FabricToolbar: React.FC<ToolbarProps> = ({
           <Plus className="h-5 w-5" />
         </Button>
 
-        {/* Colors Button */}
-        <Button
-          variant={activeTab === 'colors' ? 'secondary' : 'ghost'}
-          size="icon"
-          onClick={() => handleClick('colors')}
-          onMouseEnter={() => handleMouseEnter('colors')}
-          onMouseLeave={handleMouseLeave}
-          className={cn(
-            'h-10 w-10 rounded-lg transition-all duration-200',
-            activeTab === 'colors'
-              ? 'bg-primary text-primary-foreground'
-              : 'hover:bg-gray-300 dark:hover:bg-gray-700'
-          )}
-          title="Change Colors"
-        >
-          <Paintbrush className="h-5 w-5" />
-        </Button>
-
         {/* Images Button */}
         <Button
           variant={activeTab === 'images' ? 'secondary' : 'ghost'}
@@ -203,15 +183,6 @@ export const FabricToolbar: React.FC<ToolbarProps> = ({
               <div className="space-y-2">
                 <h3 className="text-sm font-medium mb-2">Text Options</h3>
                 <TextEditorToolbar />
-              </div>
-            )}
-
-            {displayedTab === 'colors' && (
-              <div className="space-y-2">
-                <h3 className="text-sm font-medium mb-2">Color Options</h3>
-                <div className="max-h-[400px] overflow-y-auto pr-1">
-                  <ColorToolbar />
-                </div>
               </div>
             )}
 
