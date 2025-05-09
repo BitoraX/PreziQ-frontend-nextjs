@@ -9,6 +9,15 @@ import { createEmptyQuestion } from "../utils/question-helpers";
 import { mapActivityTypeToQuestionType } from "../utils/question-type-mapping";
 
 export function useCollectionData(collectionId: string, activityId?: string) {
+  console.log(
+    `[useCollectionData] Initialized with collectionId=${collectionId} (${typeof collectionId})${
+      collectionId === "undefined"
+        ? ' WARNING: collectionId is string "undefined"'
+        : ""
+    }`
+  );
+  console.log(`[useCollectionData] activityId=${activityId || "not provided"}`);
+
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(true);
   const [activities, setActivities] = useState<Activity[]>([]);

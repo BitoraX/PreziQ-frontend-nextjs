@@ -80,6 +80,7 @@ export function useQuestionOperations(
           createdAt: newActivityData.createdAt,
           updatedAt: newActivityData.createdAt, // Using createdAt as default for updatedAt
           createdBy: "", // Adding empty string as default for createdBy
+          backgroundColor: "#FFFFFF", // Default background color
         };
 
         // Update activities array
@@ -125,13 +126,16 @@ export function useQuestionOperations(
           ],
         });
 
+        // Initialize the background color for this activity in global storage
+        if (typeof window !== "undefined") {
+          window.savedBackgroundColors = window.savedBackgroundColors || {};
+          window.savedBackgroundColors[newActivityData.activityId] = "#FFFFFF";
+        }
+
         toast({
           title: "Success",
           description: "New question added successfully",
         });
-
-        // Remove the call to refreshCollectionData to prevent page reload
-        // This is not needed since we've already updated our local state
       }
     } catch (error) {
       console.error("Error adding question:", error);
@@ -218,7 +222,6 @@ export function useQuestionOperations(
     }, 1000);
   };
 
-  // Add handleQuestionLocationChange to the return object
   /**
    * Delete an activity by ID
    */
@@ -226,16 +229,42 @@ export function useQuestionOperations(
     try {
       await activitiesApi.deleteActivity(activityId);
 
-      // Update local state
+      // Update activities state
       setActivities(activities.filter((a) => a.id !== activityId));
+
+      // Update questions state by removing questions associated with the deleted activity
+      setQuestions(questions.filter((q) => q.activity_id !== activityId));
+
+      // If the active question was from the deleted activity, adjust activeQuestionIndex
+      const deletedQuestionIndices = questions
+        .map((q, index) => (q.activity_id === activityId ? index : -1))
+        .filter((idx) => idx !== -1);
+
+      if (deletedQuestionIndices.includes(activeQuestionIndex)) {
+        // Find the first question that's not being deleted
+        const newIndex = questions.findIndex(
+          (q, idx) =>
+            q.activity_id !== activityId &&
+            !deletedQuestionIndices.includes(idx)
+        );
+
+        if (newIndex !== -1) {
+          setActiveQuestionIndex(newIndex);
+          // Also update the current activity if needed
+          const newActivity = activities.find(
+            (a) => a.id === questions[newIndex].activity_id
+          );
+          if (newActivity) setActivity(newActivity);
+        } else {
+          // If no questions left, set activity to null
+          setActivity(null);
+        }
+      }
 
       toast({
         title: "Success",
         description: "Activity deleted successfully",
       });
-
-      // Refresh collection data
-      refreshCollectionData();
     } catch (error) {
       console.error("Error deleting activity:", error);
       toast({
