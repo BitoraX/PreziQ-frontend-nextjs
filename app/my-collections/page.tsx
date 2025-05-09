@@ -81,6 +81,8 @@ export default function MyCollectionsPage() {
                 const apiResponse = processedData as ApiCollectionResponse;
 
                 const collectionsData = apiResponse.data.content;
+                console.log('Fetched collections data - first item:', collectionsData.length > 0 ? collectionsData[0] : 'No collections');
+                console.log('Collection IDs:', collectionsData.map(c => `id: ${c.id}, collectionId: ${c.collectionId}`));
                 setCollections(collectionsData);
 
                 setPagination({
@@ -146,7 +148,15 @@ export default function MyCollectionsPage() {
     };
 
     const handleViewActivities = (id: string) => {
-        router.push(`/collection?collectionId=${id}`);
+        console.log('View Activities clicked with ID:', id);
+        // Try to find the collection with this id
+        const collection = collections.find(c => c.id === id);
+
+        // Use collectionId if it exists, otherwise fall back to id
+        const collectionIdToUse = collection?.collectionId || id;
+        console.log('Using collectionId for navigation:', collectionIdToUse);
+
+        router.push(`/collection?collectionId=${collectionIdToUse}`);
     };
 
     const handleDeleteCollection = async (id: string) => {

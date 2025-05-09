@@ -78,7 +78,7 @@ export function CollectionGridItem({
           </div>
 
           <CollectionActionButtons
-            collectionId={collection.id}
+            collectionId={collection.collectionId || collection.id}
             onDelete={onDelete}
             onPreview={() => onPreview(collection)}
             onView={onView}

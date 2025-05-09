@@ -87,7 +87,6 @@ export default function LoginPage() {
     } else if (data.phoneNumber) {
       payload = { phoneNumber: data.phoneNumber, password: data.password };
     } else {
-      console.error('Bạn phải nhập email hoặc số điện thoại!');
       return;
     }
     setIsLoading(true);
@@ -103,7 +102,6 @@ export default function LoginPage() {
       router.refresh();
       router.push('/');
     } catch (error: any) {
-      console.log("err: ", error)
       setIsLoading(false);
       if (error.response && error.response.data) {
         const backendErrors = error.response.data.errors;
@@ -134,8 +132,6 @@ export default function LoginPage() {
           //   description: error.response.data.message,
           // });
         }
-
-        setIsLoading(false);
       }
     } finally {
       setIsLoading(false);

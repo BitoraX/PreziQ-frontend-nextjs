@@ -83,6 +83,9 @@ export default function PublishedCollectionsPage() {
         // Get collections list from the API response
         const collectionsData = apiResponse.data.content;
 
+        console.log('Fetched published collections data - first item:', collectionsData.length > 0 ? collectionsData[0] : 'No collections');
+        console.log('Collection IDs:', collectionsData.map(c => `id: ${c.id}, collectionId: ${c.collectionId}`));
+
         // Handle invalid dates in the collections data
         const sanitizedCollections = collectionsData.map(collection => ({
           ...collection,
@@ -173,7 +176,15 @@ export default function PublishedCollectionsPage() {
   };
 
   const handleViewActivities = (id: string) => {
-    router.push(`/collection?collectionId=${id}`);
+    console.log('View Activities clicked with ID:', id);
+    // Try to find the collection with this id
+    const collection = collections.find(c => c.id === id);
+
+    // Use collectionId if it exists, otherwise fall back to id
+    const collectionIdToUse = collection?.collectionId || id;
+    console.log('Using collectionId for navigation:', collectionIdToUse);
+
+    router.push(`/collection?collectionId=${collectionIdToUse}`);
   };
 
   const handlePreviewCollection = async (collection: Collection) => {

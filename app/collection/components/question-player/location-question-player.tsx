@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 
 // Set your Mapbox access token
-mapboxgl.accessToken = "pk.eyJ1IjoiZGVtby11c2VyIiwiYSI6ImNrbDRtNWNmMjEyOGUycG55anp0aHEwYjAifQ.9Rk4PxZEqEnbBTgLfP-0kA";
+mapboxgl.accessToken = "pk.eyJ1IjoiY2NkY2MxMSIsImEiOiJjbWFnbXduZDkwMmV6MnFzbDIxM3dxMTJ4In0.2-eYJyMMthGbAa9SOtCDbQ";
 
 interface LocationQuestionPlayerProps {
   questionText: string;
@@ -20,12 +20,18 @@ interface LocationQuestionPlayerProps {
     hint?: string;
   };
   onAnswer: (isCorrect: boolean, distance: number) => void;
+  mapStyle?: string;
+  use3D?: boolean;
+  useGlobe?: boolean;
 }
 
 export function LocationQuestionPlayer({
   questionText,
   locationData,
-  onAnswer
+  onAnswer,
+  mapStyle = "mapbox://styles/mapbox/streets-v12",
+  use3D = false,
+  useGlobe = false
 }: LocationQuestionPlayerProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
@@ -43,15 +49,50 @@ export function LocationQuestionPlayer({
 
     const map = new mapboxgl.Map({
       container: mapContainerRef.current,
-      style: "mapbox://styles/mapbox/streets-v12",
+      style: mapStyle,
       center: [0, 20], // Start with world view
       zoom: 1.5,
+      pitch: use3D ? 45 : 0,
+      bearing: use3D ? 15 : 0,
+      projection: useGlobe ? 'globe' : 'mercator',
     });
 
     mapRef.current = map;
 
     map.on("load", () => {
       setMapLoaded(true);
+
+      // Add 3D effects if use3D is true
+      if (use3D) {
+        // Add terrain source and layer
+        if (!map.getSource('mapbox-dem')) {
+          map.addSource('mapbox-dem', {
+            'type': 'raster-dem',
+            'url': 'mapbox://mapbox.mapbox-terrain-dem-v1',
+            'tileSize': 512,
+            'maxzoom': 14
+          });
+        }
+
+        // Add terrain
+        map.setTerrain({
+          'source': 'mapbox-dem',
+          'exaggeration': 1.5
+        });
+
+        // Add atmosphere/sky
+        if (!map.getLayer('sky')) {
+          map.addLayer({
+            'id': 'sky',
+            'type': 'sky',
+            'paint': {
+              'sky-type': 'atmosphere',
+              'sky-atmosphere-sun': [0.0, 90.0],
+              'sky-atmosphere-sun-intensity': 15
+            }
+          });
+        }
+      }
 
       // Add a marker that will be placed when user clicks
       const marker = new mapboxgl.Marker({
@@ -84,17 +125,17 @@ export function LocationQuestionPlayer({
     const R = 6371; // Radius of the earth in km
     const dLat = deg2rad(lat2 - lat1);
     const dLon = deg2rad(lon2 - lon1);
-    const a = 
-      Math.sin(dLat/2) * Math.sin(dLat/2) +
-      Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * 
-      Math.sin(dLon/2) * Math.sin(dLon/2); 
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); 
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) *
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     const d = R * c; // Distance in km
     return d;
   }
-  
+
   function deg2rad(deg: number) {
-    return deg * (Math.PI/180);
+    return deg * (Math.PI / 180);
   }
 
   // Function to submit answer
@@ -103,14 +144,14 @@ export function LocationQuestionPlayer({
 
     // Calculate distance between selected location and correct location
     const calculatedDistance = calculateDistance(
-      selectedLocation.lat, 
-      selectedLocation.lng, 
-      locationData.lat, 
+      selectedLocation.lat,
+      selectedLocation.lng,
+      locationData.lat,
       locationData.lng
     );
 
     setDistance(calculatedDistance);
-    
+
     // Check if answer is within acceptable radius
     const answerIsCorrect = calculatedDistance <= locationData.radius;
     setIsCorrect(answerIsCorrect);
@@ -184,13 +225,13 @@ export function LocationQuestionPlayer({
         <h3 className="text-lg font-medium text-center mb-2">
           {questionText || "Chọn vị trí trên bản đồ"}
         </h3>
-        
+
         {/* Hint section */}
         {locationData.hint && (
           <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-md p-3 flex items-start">
-            <Button 
-              variant="ghost" 
-              size="sm" 
+            <Button
+              variant="ghost"
+              size="sm"
               className="text-yellow-600 dark:text-yellow-400 p-0 h-auto mr-2"
               onClick={() => setShowHint(!showHint)}
             >
@@ -203,15 +244,15 @@ export function LocationQuestionPlayer({
             </div>
           </div>
         )}
-        
+
         {/* Map container */}
         <div className="relative">
-          <div 
-            ref={mapContainerRef} 
+          <div
+            ref={mapContainerRef}
             className="w-full h-[400px] bg-slate-100 dark:bg-slate-800 rounded-lg"
           />
         </div>
-        
+
         {/* Selected coordinates display */}
         {selectedLocation && !hasAnswered && (
           <div className="bg-muted/30 p-3 rounded-md text-sm text-center">
@@ -221,7 +262,7 @@ export function LocationQuestionPlayer({
             </p>
           </div>
         )}
-        
+
         {/* Result display */}
         {hasAnswered && (
           <div className={`p-4 rounded-md ${isCorrect ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'}`}>
@@ -237,16 +278,16 @@ export function LocationQuestionPlayer({
             </div>
             <p className="mt-1 text-sm">
               Bạn đã chọn cách vị trí đúng {distance.toFixed(1)} km.
-              {isCorrect 
-                ? ' Trong phạm vi cho phép!' 
+              {isCorrect
+                ? ' Trong phạm vi cho phép!'
                 : ` (Vượt quá phạm vi cho phép ${locationData.radius} km)`}
             </p>
           </div>
         )}
-        
+
         {/* Submit button */}
         {selectedLocation && !hasAnswered && (
-          <Button 
+          <Button
             className="w-full bg-gradient-to-r from-blue-500 to-indigo-600"
             onClick={handleSubmitAnswer}
           >
@@ -254,7 +295,7 @@ export function LocationQuestionPlayer({
             Gửi câu trả lời
           </Button>
         )}
-        
+
         {hasAnswered && (
           <div className="text-sm text-center text-muted-foreground">
             Vị trí chính xác: {locationData.lat.toFixed(6)}, {locationData.lng.toFixed(6)}

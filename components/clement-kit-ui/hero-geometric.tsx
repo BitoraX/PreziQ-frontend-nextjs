@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Inter } from 'next/font/google';
+import { Inter, Dancing_Script, Playfair_Display, Great_Vibes } from 'next/font/google';
 import Image from 'next/image';
 import { cn } from '@/lib/utils';
 import { useTheme } from 'next-themes';
@@ -11,6 +11,26 @@ import { TypingAnimation } from '@/components/magicui/typing-animation';
 const inter = Inter({
   subsets: ['latin'],
   variable: '--font-inter',
+});
+
+// Add elegant cursive font for the "Professional" text
+const dancingScript = Dancing_Script({
+  subsets: ['latin'],
+  weight: ['600', '700'],
+  variable: '--font-dancing-script',
+});
+
+// Add more elegant script font option
+const greatVibes = Great_Vibes({
+  subsets: ['latin'],
+  weight: ['400'],
+  variable: '--font-great-vibes',
+});
+
+// Add secondary elegant font option
+const playfair = Playfair_Display({
+  subsets: ['latin'],
+  variable: '--font-playfair',
 });
 
 function ElegantShape({
@@ -148,15 +168,43 @@ export default function HeroGeometric({
         'bg-background' // Use CSS variable from globals.css
       )}
     >
-      {/* Background gradient */}
+      {/* Enhanced background gradient with more depth */}
       <div
         className={cn(
           'absolute inset-0 blur-3xl',
           isDark
-            ? 'bg-gradient-to-br from-indigo-500/[0.05] via-transparent to-rose-500/[0.05]'
-            : 'bg-gradient-to-br from-indigo-500/[0.03] via-transparent to-rose-500/[0.03]'
+            ? 'bg-gradient-to-br from-indigo-500/[0.08] via-violet-600/[0.04] to-rose-500/[0.08]'
+            : 'bg-gradient-to-br from-indigo-500/[0.05] via-violet-600/[0.03] to-rose-500/[0.05]'
         )}
       />
+
+      {/* Add floating particles effect */}
+      <div className="absolute inset-0 overflow-hidden opacity-30">
+        {Array.from({ length: 20 }).map((_, i) => (
+          <motion.div
+            key={i}
+            className={cn(
+              "absolute rounded-full",
+              isDark ? "bg-white/30" : "bg-primary/20",
+              "w-2 h-2"
+            )}
+            style={{
+              left: `${Math.random() * 100}%`,
+              top: `${Math.random() * 100}%`,
+            }}
+            animate={{
+              y: [0, -15, 0],
+              opacity: [0.4, 0.8, 0.4],
+            }}
+            transition={{
+              duration: 3 + Math.random() * 5,
+              repeat: Infinity,
+              delay: Math.random() * 5,
+              ease: "easeInOut",
+            }}
+          />
+        ))}
+      </div>
 
       <div className='absolute inset-0 overflow-hidden'>
         {/* Elegant shapes remain the same */}
@@ -252,7 +300,7 @@ export default function HeroGeometric({
                 className={cn(
                   'block bg-clip-text text-transparent',
                   isDark
-                    ? 'bg-gradient-to-b from-white to-white/80'
+                    ? 'bg-gradient-to-b from-white to-white/90'
                     : 'bg-gradient-to-b from-black to-black/80',
                   'text-4xl sm:text-6xl md:text-7xl leading-tight'
                 )}
@@ -262,20 +310,39 @@ export default function HeroGeometric({
                 {title1}
               </TypingAnimation>
 
+              {/* Use TypingAnimation for Professional text to match the style */}
               <TypingAnimation
                 className={cn(
                   'block mt-2 bg-clip-text text-transparent',
                   isDark
-                    ? 'bg-gradient-to-r from-blue-300 via-purple-300 to-pink-300' // More vibrant colors for dark mode
-                    : 'bg-gradient-to-r from-blue-500 via-purple-600 to-pink-500', // More vibrant colors for light mode
-                  inter.className,
-                  'text-4xl sm:text-6xl md:text-7xl leading-tight'
+                    ? 'bg-gradient-to-r from-violet-300 via-purple-300 to-pink-300'
+                    : 'bg-gradient-to-r from-violet-500 via-purple-600 to-pink-500',
+                  greatVibes.className,
+                  'text-6xl sm:text-8xl md:text-9xl leading-tight',
+                  'px-1'
                 )}
                 delay={1500} // Start after the first text finishes
                 duration={70}
               >
                 {title2}
               </TypingAnimation>
+
+              {/* Light rays effect behind the text - keep this for the glow effect */}
+              <motion.div
+                className={cn(
+                  'absolute inset-0 -z-10 opacity-40',
+                  'bg-gradient-to-r from-transparent via-primary/20 to-transparent',
+                  'blur-xl rounded-full'
+                )}
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: [0, 0.5, 0.3], scale: 1.2 }}
+                transition={{
+                  duration: 3,
+                  delay: 2,
+                  repeat: Infinity,
+                  repeatType: "reverse"
+                }}
+              />
             </h1>
           </motion.div>
 
@@ -295,6 +362,7 @@ export default function HeroGeometric({
             </p>
           </motion.div>
 
+          {/* Enhanced CTA buttons */}
           <motion.div
             custom={3}
             variants={fadeUpVariants}
@@ -302,30 +370,36 @@ export default function HeroGeometric({
             animate='visible'
             className='flex flex-col md:flex-row items-center justify-center gap-4'
           >
-            <a
+            <motion.a
               href='#'
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.98 }}
               className={cn(
-                'px-6 py-3 rounded-lg font-medium',
+                'px-7 py-3.5 rounded-lg font-medium text-base',
                 'bg-primary text-primary-foreground hover:bg-primary/90',
                 'transition duration-300 ease-in-out',
-                'flex items-center justify-center'
+                'flex items-center justify-center',
+                'shadow-lg shadow-primary/20'
               )}
             >
               Start for free
-            </a>
-            <a
+            </motion.a>
+            <motion.a
               href='/membership'
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.98 }}
               className={cn(
-                'px-6 py-3 rounded-lg font-medium',
+                'px-7 py-3.5 rounded-lg font-medium text-base',
                 isDark
                   ? 'bg-white/5 hover:bg-white/10 text-white border border-white/10'
                   : 'bg-black/5 hover:bg-black/10 text-black border border-black/10',
                 'transition duration-300 ease-in-out',
-                'flex items-center justify-center'
+                'flex items-center justify-center',
+                'backdrop-blur-sm'
               )}
             >
               Xem các gói membership
-            </a>
+            </motion.a>
           </motion.div>
 
           <motion.div
@@ -376,13 +450,13 @@ export default function HeroGeometric({
         </div>
       </div>
 
-      {/* Gradient overlay */}
+      {/* Enhanced gradient overlay */}
       <div
         className={cn(
           'absolute inset-0 pointer-events-none',
           isDark
-            ? 'bg-gradient-to-t from-black via-transparent to-black/80'
-            : 'bg-gradient-to-t from-white via-transparent to-white/80'
+            ? 'bg-gradient-to-t from-black via-transparent to-black/90'
+            : 'bg-gradient-to-t from-white via-transparent to-white/90'
         )}
       />
     </div>

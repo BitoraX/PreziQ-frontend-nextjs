@@ -3,54 +3,53 @@ import {
   RegisterPayload,
   ResetPasswordPayload,
   BodyLogin,
-} from '@/models/auth';
-import axiosClient from './axios-client';
+} from "@/models/auth";
+import axiosClient from "./axios-client";
 
 export const authApi = {
   login(payload: BodyLogin) {
     return axiosClient
-      .post('/auth/login', payload, { withCredentials: true })
+      .post("/auth/login", payload, { withCredentials: true })
       .then((response) => {
         const accessToken: string = response.data.data.accessToken;
         if (accessToken) {
-          localStorage.setItem('accessToken', accessToken);
+          localStorage.setItem("accessToken", accessToken);
           return response;
         }
       })
       .catch((error) => {
-        console.error('Login error:', error);
         throw error;
       });
   },
 
   register(payload: RegisterPayload) {
-    return axiosClient.post('/auth/register', payload);
+    return axiosClient.post("/auth/register", payload);
   },
 
   logout() {
-    return axiosClient.post('/auth/logout');
+    return axiosClient.post("/auth/logout");
   },
 
   verifyEmail(payload: string) {
-    return axiosClient.post('/auth/verify-active-account', payload);
+    return axiosClient.post("/auth/verify-active-account", payload);
   },
 
   resendEmail(payload: string) {
-    return axiosClient.post('/auth/resend-verify', payload);
+    return axiosClient.post("/auth/resend-verify", payload);
   },
 
   forgotPassword(payload: string) {
-    return axiosClient.post('/auth/forgot-password', payload);
+    return axiosClient.post("/auth/forgot-password", payload);
   },
 
   resetPassword(payload: ResetPasswordPayload) {
-    return axiosClient.post('/auth/reset-password', payload);
+    return axiosClient.post("/auth/reset-password", payload);
   },
 
   getAccount() {
-    return axiosClient.get('/auth/account');
+    return axiosClient.get("/auth/account");
   },
 
   refreshToken: () =>
-    axiosClient.get('/auth/refresh', { withCredentials: true }),
+    axiosClient.get("/auth/refresh", { withCredentials: true }),
 };
