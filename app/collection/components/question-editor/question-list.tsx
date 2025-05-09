@@ -1,5 +1,13 @@
 "use client";
 
+// Add window interface extension for global background storage
+declare global {
+    interface Window {
+        lastQuestionClick?: number;
+        savedBackgroundColors?: Record<string, string>;
+    }
+}
+
 import React, { useCallback } from "react";
 import { Plus, Trash, GripVertical, Search, CheckCircle, CheckSquare, XCircle, AlignLeft, FileText, ChevronLeft, ChevronRight, MapPin, MoveVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -38,7 +46,16 @@ interface QuestionListProps {
     // Props thêm để hỗ trợ kéo thả activity
     activities?: Activity[];
     onReorderActivities?: (newOrder: string[]) => void;
+    onDeleteActivity?: (activityId: string) => void;
 }
+
+// Add function to get current background color
+const getCurrentBackgroundColor = (activityId: string, defaultColor = '#FFFFFF'): string => {
+    if (typeof window !== 'undefined' && window.savedBackgroundColors && activityId) {
+        return window.savedBackgroundColors[activityId] || defaultColor;
+    }
+    return defaultColor;
+};
 
 export function QuestionList({
     questions,
@@ -51,7 +68,8 @@ export function QuestionList({
     onReorderQuestions,
     collectionId,
     activities = [],
-    onReorderActivities
+    onReorderActivities,
+    onDeleteActivity
 }: QuestionListProps) {
     // For a more realistic UI - this would actually filter questions in a real implementation
     const [expandedView, setExpandedView] = React.useState(true);
@@ -189,7 +207,45 @@ export function QuestionList({
         return activities.find(a => a.id === question.activity_id);
     };
 
-    const DraggableQuestionListItem = ({ question, index }: { question: QuizQuestion, index: number }) => {
+    // Function to get the current background color of an activity with fallbacks
+    const getActivityBackgroundColor = (activityId?: string, defaultColor = '#FFFFFF'): string => {
+        if (!activityId) return defaultColor;
+
+        // First try from global storage
+        if (typeof window !== 'undefined' && window.savedBackgroundColors && window.savedBackgroundColors[activityId]) {
+            return window.savedBackgroundColors[activityId];
+        }
+
+        return defaultColor;
+    };
+
+    const renderQuestionListItem = (question: QuizQuestion, index: number) => {
+        // Find corresponding activity to get additional metadata
+        const activity = findActivityForQuestion(question, activities);
+        const questionColor = activity?.backgroundColor || '#FFFFFF';
+
+        // Get current background color - prefer global storage over activity prop
+        const currentColor = getActivityBackgroundColor(question.activity_id, questionColor);
+
+        return (
+            <DraggableQuestionListItem
+                key={question.id}
+                question={question}
+                index={index}
+                backgroundColor={currentColor}
+            />
+        );
+    };
+
+    const DraggableQuestionListItem = ({
+        question,
+        index,
+        backgroundColor
+    }: {
+        question: QuizQuestion,
+        index: number,
+        backgroundColor?: string
+    }) => {
         const ref = React.useRef<HTMLDivElement>(null);
 
         const [{ isDragging }, drag] = useDrag({
@@ -248,67 +304,78 @@ export function QuestionList({
             },
         });
 
-        const opacity = isDragging ? 0.4 : 1;
         drag(drop(ref));
 
         return (
             <div
                 ref={ref}
-                style={{ opacity }}
                 className={cn(
-                    "flex items-center p-3 hover:bg-muted/50 cursor-pointer transition-all border-l-2 border-transparent",
-                    index === activeQuestionIndex && "bg-muted/70 border-l-2 border-primary"
+                    isCollapsed
+                        ? "w-12 h-12 flex items-center justify-center p-0 transition-all duration-200 mr-1 overflow-hidden"
+                        : "flex items-center p-3 hover:bg-muted/50 cursor-pointer transition-all border-l-2 border-transparent",
+                    index === activeQuestionIndex && !isCollapsed && "bg-muted/70 border-l-2 border-primary",
+                    index === activeQuestionIndex && isCollapsed && "bg-primary/10 border border-primary/25",
+                    !isCollapsed && isDragging && "opacity-50",
+                    isCollapsed && !(hoveredQuestion === index || index === activeQuestionIndex) && "hover:bg-accent/50 border border-transparent hover:border-border/50"
                 )}
                 onClick={() => handleQuestionClick(index)}
+                onMouseEnter={() => setHoveredQuestion(index)}
+                onMouseLeave={() => setHoveredQuestion(null)}
+                style={isCollapsed && (hoveredQuestion === index || index === activeQuestionIndex)
+                    ? { backgroundColor }
+                    : undefined}
             >
-                <div className="flex items-center flex-1 min-w-0">
+                {isCollapsed ? (
                     <div className={cn(
-                        "w-7 h-7 rounded-full flex items-center justify-center mr-3 flex-shrink-0 text-xs font-medium",
+                        "w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium",
                         index === activeQuestionIndex
                             ? "bg-primary text-primary-foreground"
                             : "bg-muted-foreground/10 text-muted-foreground"
                     )}>
                         {index + 1}
                     </div>
-                    <div className="truncate">
-                        <p className="text-sm font-medium truncate">
-                            {question.question_text || `Question ${index + 1}`}
-                        </p>
-                        <p className="text-xs text-muted-foreground truncate">
-                            {question.options.length} options • {question.question_type.replace('_', ' ')}
-                        </p>
-                    </div>
-                </div>
-                <div className="flex items-center gap-1 pl-2">
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        className={cn(
-                            "h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity",
-                            index === activeQuestionIndex && "opacity-100"
-                        )}
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            onDeleteQuestion(index);
-                        }}
-                    >
-                        <Trash className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
-                    </Button>
-                    <div className="cursor-grab opacity-50 hover:opacity-100">
-                        <GripVertical className="h-4 w-4 text-muted-foreground" />
-                    </div>
-                </div>
+                ) : (
+                    <>
+                        <div className="flex items-center flex-1 min-w-0">
+                            <div className={cn(
+                                "w-7 h-7 rounded-full flex items-center justify-center mr-3 flex-shrink-0 text-xs font-medium",
+                                index === activeQuestionIndex
+                                    ? "bg-primary text-primary-foreground"
+                                    : "bg-muted-foreground/10 text-muted-foreground"
+                            )}>
+                                {index + 1}
+                            </div>
+                            <div className="truncate">
+                                <p className="text-sm font-medium truncate">
+                                    {question.question_text || `Question ${index + 1}`}
+                                </p>
+                                <p className="text-xs text-muted-foreground truncate">
+                                    {question.options.length} options • {question.question_type.replace('_', ' ')}
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-1 pl-2">
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                className={cn(
+                                    "h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity",
+                                    index === activeQuestionIndex && "opacity-100"
+                                )}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onDeleteQuestion(index);
+                                }}
+                            >
+                                <Trash className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
+                            </Button>
+                            <div className="cursor-grab opacity-50 hover:opacity-100">
+                                <GripVertical className="h-4 w-4 text-muted-foreground" />
+                            </div>
+                        </div>
+                    </>
+                )}
             </div>
-        );
-    };
-
-    const renderQuestionListItem = (question: QuizQuestion, index: number) => {
-        return (
-            <DraggableQuestionListItem
-                key={question.id}
-                question={question}
-                index={index}
-            />
         );
     };
 
@@ -433,9 +500,28 @@ export function QuestionList({
                                                 </span>
                                             </div>
 
+                                            {/* Delete button - visible on hover */}
+                                            {question.activity_id && onDeleteActivity && (
+                                                <div
+                                                    className="absolute top-1 right-1 z-20 opacity-0 group-hover:opacity-100 hover:opacity-100 transition-opacity"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        onDeleteActivity(question.activity_id);
+                                                    }}
+                                                >
+                                                    <Button
+                                                        variant="destructive"
+                                                        size="icon"
+                                                        className="h-5 w-5 p-0"
+                                                    >
+                                                        <Trash className="h-3 w-3" />
+                                                    </Button>
+                                                </div>
+                                            )}
+
                                             {/* Question area */}
                                             <div
-                                                className="w-full h-full flex flex-col"
+                                                className="w-full h-full flex flex-col group"
                                                 style={{
                                                     backgroundImage: findActivityForQuestion(question, activities)?.backgroundImage
                                                         ? `url(${findActivityForQuestion(question, activities)?.backgroundImage})`
@@ -484,7 +570,7 @@ export function QuestionList({
                                     <div
                                         key={index}
                                         className={cn(
-                                            "flex-shrink-0 h-8 px-2 flex items-center gap-1 rounded-md cursor-pointer transition-all border",
+                                            "flex-shrink-0 h-8 px-2 flex items-center gap-1 rounded-md cursor-pointer transition-all border group",
                                             index === activeQuestionIndex
                                                 ? "bg-primary text-primary-foreground border-primary"
                                                 : "bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800"
@@ -504,6 +590,25 @@ export function QuestionList({
                                                 {question.question_text || `Question ${index + 1}`}
                                             </span>
                                         </div>
+
+                                        {/* Delete button */}
+                                        {question.activity_id && onDeleteActivity && (
+                                            <div
+                                                className="ml-2 opacity-0 group-hover:opacity-100 hover:opacity-100"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    onDeleteActivity(question.activity_id);
+                                                }}
+                                            >
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="h-4 w-4 p-0 text-destructive hover:bg-destructive/10"
+                                                >
+                                                    <Trash className="h-2.5 w-2.5" />
+                                                </Button>
+                                            </div>
+                                        )}
                                     </div>
                                 ))}
 
@@ -541,7 +646,7 @@ export function QuestionList({
                                 <div
                                     key={index}
                                     className={cn(
-                                        "h-8 w-8 rounded-lg flex-shrink-0 flex items-center justify-center text-[10px] cursor-pointer transition-all duration-200 relative border",
+                                        "h-8 w-8 rounded-lg flex-shrink-0 flex items-center justify-center text-[10px] cursor-pointer transition-all duration-200 relative border group",
                                         index === activeQuestionIndex
                                             ? "bg-primary text-primary-foreground border-primary"
                                             : "bg-muted text-muted-foreground hover:bg-muted/80 border-transparent"
@@ -560,6 +665,25 @@ export function QuestionList({
                                                     {question.question_type.replace(/_/g, ' ')}
                                                 </p>
                                             </div>
+
+                                            {/* Add delete button in tooltip */}
+                                            {question.activity_id && onDeleteActivity && (
+                                                <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700 flex justify-end">
+                                                    <Button
+                                                        variant="destructive"
+                                                        size="sm"
+                                                        className="h-6 text-[10px] px-2"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            onDeleteActivity(question.activity_id);
+                                                        }}
+                                                    >
+                                                        <Trash className="h-2.5 w-2.5 mr-1" />
+                                                        Delete
+                                                    </Button>
+                                                </div>
+                                            )}
+
                                             <div className="absolute top-0 left-1/2 transform -translate-x-1/2 -translate-y-1/2 rotate-45 w-2 h-2 bg-white dark:bg-gray-800"></div>
                                         </div>
                                     )}

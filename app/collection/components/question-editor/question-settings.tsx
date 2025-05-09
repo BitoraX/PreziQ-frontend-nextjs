@@ -5,6 +5,8 @@ declare global {
   interface Window {
     updateActivityTimer: ReturnType<typeof setTimeout>;
     updateActivityBackground?: (activityId: string, properties: { backgroundImage?: string, backgroundColor?: string }) => void;
+    // Add a new global variable to store the current color persistently
+    savedBackgroundColors?: Record<string, string>;
   }
 }
 
@@ -189,6 +191,22 @@ export function QuestionSettings({
   onQuestionLocationChange,
   activity, // Nova propriedade para acessar a atividade atual
 }: QuestionSettingsProps) {
+  // Initialize window storage if needed
+  React.useEffect(() => {
+    // Initialize the global storage for activity background colors if it doesn't exist
+    if (typeof window !== 'undefined' && !window.savedBackgroundColors) {
+      window.savedBackgroundColors = {};
+    }
+
+    // Store the initial color if the activity exists
+    if (activity?.id && activity?.backgroundColor && typeof window !== 'undefined') {
+      window.savedBackgroundColors = window.savedBackgroundColors || {};
+      if (!window.savedBackgroundColors[activity.id]) {
+        window.savedBackgroundColors[activity.id] = activity.backgroundColor;
+      }
+    }
+  }, []);
+
   // State to store the correct answer text for text_answer type
   const [correctAnswerText, setCorrectAnswerText] = React.useState(
     activeQuestion?.correct_answer_text || ''
@@ -198,15 +216,45 @@ export function QuestionSettings({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
+  // Use a ref to store the latest selected color to prevent state loss
+  const latestBackgroundColorRef = useRef(activity?.backgroundColor || '#FFFFFF');
+
   // States for additional fields
   const [title, setTitle] = useState(activity?.title || '');
   const [description, setDescription] = useState(activity?.description || '');
   const [isPublished, setIsPublished] = useState(activity?.is_published || false);
-  const [backgroundColor, setBackgroundColor] = useState(activity?.backgroundColor || '#FFFFFF');
+  const [backgroundColor, setBackgroundColor] = useState(() => {
+    // Try to get saved color from window storage first
+    if (typeof window !== 'undefined' && window.savedBackgroundColors && activity?.id) {
+      return window.savedBackgroundColors[activity.id] || activity?.backgroundColor || '#FFFFFF';
+    }
+    return activity?.backgroundColor || '#FFFFFF';
+  });
   const [customBackgroundMusic, setCustomBackgroundMusic] = useState(activity?.customBackgroundMusic || '');
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
   const [invalidImageUrl, setInvalidImageUrl] = useState(false);
+
+  // Helper to always get the current color
+  const getCurrentColor = () => {
+    if (typeof window !== 'undefined' && window.savedBackgroundColors && activity?.id) {
+      return window.savedBackgroundColors[activity.id] || backgroundColor;
+    }
+    return backgroundColor;
+  };
+
+  // Update ref when background color changes
+  React.useEffect(() => {
+    if (backgroundColor) {
+      latestBackgroundColorRef.current = backgroundColor;
+
+      // Also save to window storage
+      if (typeof window !== 'undefined' && activity?.id) {
+        window.savedBackgroundColors = window.savedBackgroundColors || {};
+        window.savedBackgroundColors[activity.id] = backgroundColor;
+      }
+    }
+  }, [backgroundColor, activity?.id]);
 
   // Update state when activity changes
   React.useEffect(() => {
@@ -214,15 +262,30 @@ export function QuestionSettings({
       setTitle(activity.title || '');
       setDescription(activity.description || '');
       setIsPublished(activity.is_published || false);
-      setBackgroundColor(activity.backgroundColor || '#FFFFFF');
+
+      // For background color, prioritize our saved value
+      if (typeof window !== 'undefined' && window.savedBackgroundColors && activity.id) {
+        const savedColor = window.savedBackgroundColors[activity.id];
+        if (savedColor) {
+          setBackgroundColor(savedColor);
+        } else if (activity.backgroundColor) {
+          setBackgroundColor(activity.backgroundColor);
+          window.savedBackgroundColors[activity.id] = activity.backgroundColor;
+        }
+      } else if (activity.backgroundColor) {
+        setBackgroundColor(activity.backgroundColor);
+      }
+
       setCustomBackgroundMusic(activity.customBackgroundMusic || '');
     }
-  }, [activity]);
+  }, [activity?.id]);
 
   // Update state when activeQuestion changes
   React.useEffect(() => {
-    setCorrectAnswerText(activeQuestion.correct_answer_text || '');
-  }, [activeQuestion.activity_id, activeQuestion.correct_answer_text]);
+    if (activeQuestion) {
+      setCorrectAnswerText(activeQuestion.correct_answer_text || '');
+    }
+  }, [activeQuestion]);
 
   // Update text answer when changing
   const handleTextAnswerChange = (value: string) => {
@@ -242,7 +305,7 @@ export function QuestionSettings({
       onSlideContentChange(value);
 
       // If this is a slide activity, also update the activity description
-      if (activity && (activeQuestion.question_type === 'slide' || activeQuestion.question_type === 'info_slide')) {
+      if (activity && activeQuestion && (activeQuestion.question_type === 'slide' || activeQuestion.question_type === 'info_slide')) {
         debouncedUpdateActivity({ description: value });
       }
     }
@@ -276,6 +339,8 @@ export function QuestionSettings({
 
   // Tạo nút chọn nhanh cho các loại question type
   const QuestionTypeSelector = () => {
+    if (!activeQuestion) return null;
+
     return (
       <div className="flex flex-col space-y-2">
         <Button
@@ -708,155 +773,6 @@ export function QuestionSettings({
     }
   };
 
-  // Function to update activity in the API
-  const updateActivity = async (data: any) => {
-    if (!activity?.id) return;
-
-    setIsSaving(true);
-    try {
-      // Ensure we're sending the correct API payload shape
-      const payload = {
-        ...data,
-        // Make sure these fields match the API expected format
-        title: data.title !== undefined ? data.title : activity.title,
-        description: data.description !== undefined ? data.description : activity.description,
-        isPublished: data.isPublished !== undefined ? data.isPublished : activity.is_published,
-        backgroundColor: data.backgroundColor !== undefined ? data.backgroundColor : activity.backgroundColor,
-        backgroundImage: data.backgroundImage !== undefined ? data.backgroundImage : activity.backgroundImage,
-        customBackgroundMusic: data.customBackgroundMusic !== undefined ? data.customBackgroundMusic : activity.customBackgroundMusic
-      };
-
-      // Only send fields that are actually changing
-      const finalPayload = Object.keys(data).reduce((acc, key) => {
-        acc[key] = payload[key];
-        return acc;
-      }, {} as any);
-
-      console.log('Updating activity with payload:', finalPayload);
-      await activitiesApi.updateActivity(activity.id, finalPayload);
-
-      toast({
-        title: "Saved successfully",
-        description: "Your changes have been saved.",
-      });
-    } catch (error) {
-      console.error('Error updating activity:', error);
-      toast({
-        title: "Error saving changes",
-        description: "Could not save your changes. Please try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  // Function to update activity in the API with debounce
-  const debouncedUpdateActivity = React.useCallback(
-    (data: any) => {
-      if (!activity?.id) return;
-
-      setIsSaving(true);
-
-      // Clear any existing timeout
-      if (window.updateActivityTimer) {
-        clearTimeout(window.updateActivityTimer);
-      }
-
-      // Set a new timeout
-      window.updateActivityTimer = setTimeout(async () => {
-        try {
-          await updateActivity(data);
-        } finally {
-          setIsSaving(false);
-        }
-      }, 500); // 500ms debounce time
-    },
-    [activity, updateActivity]
-  );
-
-  // Use debounced version for high-frequency updates like color changes
-  const handleBackgroundColorChange = (value: string) => {
-    setBackgroundColor(value);
-    // Update in real-time but with debounce for better UX
-    if (activity) {
-      debouncedUpdateActivity({ backgroundColor: value });
-
-      // Use the immediate background update function if available
-      if (typeof window !== 'undefined' && window.updateActivityBackground) {
-        window.updateActivityBackground(activity.id, { backgroundColor: value });
-      }
-    }
-  };
-
-  // Functions for updating basic fields
-  const handleTitleChange = (value: string) => {
-    setTitle(value);
-    // Update API silently without showing saving state
-    if (activity && value !== activity.title) {
-      updateActivitySilently({ title: value });
-    }
-  };
-
-  const handleDescriptionChange = (value: string) => {
-    setDescription(value);
-    // Update API silently without showing saving state
-    if (activity && value !== activity.description) {
-      updateActivitySilently({ description: value });
-    }
-  };
-
-  // Silent update without showing saving indicator
-  const updateActivitySilently = async (data: any) => {
-    if (!activity?.id) return;
-
-    try {
-      // Ensure we're sending the correct API payload shape
-      const payload = {
-        ...data,
-        // Make sure these fields match the API expected format
-        title: data.title !== undefined ? data.title : activity.title,
-        description: data.description !== undefined ? data.description : activity.description,
-        isPublished: data.isPublished !== undefined ? data.isPublished : activity.is_published,
-        backgroundColor: data.backgroundColor !== undefined ? data.backgroundColor : activity.backgroundColor,
-        backgroundImage: data.backgroundImage !== undefined ? data.backgroundImage : activity.backgroundImage,
-        customBackgroundMusic: data.customBackgroundMusic !== undefined ? data.customBackgroundMusic : activity.customBackgroundMusic
-      };
-
-      // Only send fields that are actually changing
-      const finalPayload = Object.keys(data).reduce((acc, key) => {
-        acc[key] = payload[key];
-        return acc;
-      }, {} as any);
-
-      console.log('Silently updating activity with payload:', finalPayload);
-      await activitiesApi.updateActivity(activity.id, finalPayload);
-
-      // No toast for silent updates
-    } catch (error) {
-      console.error('Error updating activity silently:', error);
-      // Only show toast for errors
-      toast({
-        title: "Error saving changes",
-        description: "Could not save your changes. Please try again.",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleIsPublishedChange = (checked: boolean) => {
-    setIsPublished(checked);
-    debouncedUpdateActivity({ isPublished: checked });
-  };
-
-  const handleBackgroundMusicChange = (value: string) => {
-    setCustomBackgroundMusic(value);
-    // Update API immediately
-    if (activity && value !== activity.customBackgroundMusic) {
-      debouncedUpdateActivity({ customBackgroundMusic: value });
-    }
-  };
-
   // Function to handle background image change from input
   const handleBackgroundImageChange = (value: string) => {
     setInvalidImageUrl(false); // Reset invalid state when URL changes
@@ -942,12 +858,12 @@ export function QuestionSettings({
           <div className="flex gap-3">
             <div
               className="h-10 w-10 rounded-md border overflow-hidden"
-              style={{ backgroundColor }}
+              style={{ backgroundColor: getCurrentColor() }}
             />
             <Input
               id="background-color"
               type="color"
-              value={backgroundColor}
+              value={getCurrentColor()}
               onChange={(e) => handleBackgroundColorChange(e.target.value)}
               className="w-full"
             />
@@ -1128,6 +1044,8 @@ export function QuestionSettings({
 
   // Slide settings component
   const SlideSettings = () => {
+    if (!activeQuestion) return null;
+
     return (
       <div className="p-4 bg-yellow-50 dark:bg-yellow-900/10 rounded-lg border border-yellow-100 dark:border-yellow-800">
         <div className="mb-4">
@@ -1209,6 +1127,8 @@ export function QuestionSettings({
 
   // Location settings component
   const LocationSettings = () => {
+    if (!activeQuestion) return null;
+
     return (
       <div className="space-y-4">
         <div className="space-y-2">
@@ -1256,6 +1176,191 @@ export function QuestionSettings({
     );
   };
 
+  // Function to change background color
+  const handleBackgroundColorChange = (value: string) => {
+    // Update both state and persistent storage
+    setBackgroundColor(value);
+    latestBackgroundColorRef.current = value;
+
+    // Store in window for persistence
+    if (typeof window !== 'undefined' && activity?.id) {
+      window.savedBackgroundColors = window.savedBackgroundColors || {};
+      window.savedBackgroundColors[activity.id] = value;
+    }
+
+    // Update UI immediately using the window helper function
+    if (activity && typeof window !== 'undefined' && window.updateActivityBackground) {
+      window.updateActivityBackground(activity.id, { backgroundColor: value });
+    }
+
+    // Then save to API with debounce
+    if (activity) {
+      debouncedUpdateActivity({ backgroundColor: value });
+    }
+  };
+
+  // Function to update activity in the API
+  const updateActivity = async (data: any) => {
+    if (!activity?.id) return;
+
+    setIsSaving(true);
+    try {
+      // Special handling for background color - always use our saved value
+      const finalData = { ...data };
+      if (data.backgroundColor && typeof window !== 'undefined' && window.savedBackgroundColors) {
+        finalData.backgroundColor = window.savedBackgroundColors[activity.id] || data.backgroundColor;
+      }
+
+      // Ensure we're sending the correct API payload shape
+      const payload = {
+        ...finalData,
+        // Make sure these fields match the API expected format
+        title: finalData.title !== undefined ? finalData.title : activity.title,
+        description: finalData.description !== undefined ? finalData.description : activity.description,
+        isPublished: finalData.isPublished !== undefined ? finalData.isPublished : activity.is_published,
+        backgroundColor: finalData.backgroundColor !== undefined ? finalData.backgroundColor : activity.backgroundColor,
+        backgroundImage: finalData.backgroundImage !== undefined ? finalData.backgroundImage : activity.backgroundImage,
+        customBackgroundMusic: finalData.customBackgroundMusic !== undefined ? finalData.customBackgroundMusic : activity.customBackgroundMusic
+      };
+
+      // Only send fields that are actually changing
+      const finalPayload = Object.keys(finalData).reduce((acc, key) => {
+        acc[key] = payload[key];
+        return acc;
+      }, {} as any);
+
+      console.log('Updating activity with payload:', finalPayload);
+      await activitiesApi.updateActivity(activity.id, finalPayload);
+
+      // For background color changes, force a DOM update after API returns
+      if (finalData.backgroundColor && typeof window !== 'undefined') {
+        const savedColor = window.savedBackgroundColors?.[activity.id] || finalData.backgroundColor;
+
+        // Force a state update
+        setBackgroundColor(savedColor);
+
+        // Also update the DOM
+        if (window.updateActivityBackground) {
+          window.updateActivityBackground(activity.id, { backgroundColor: savedColor });
+        }
+
+        // Force update the input element directly to bypass any React weirdness
+        setTimeout(() => {
+          const colorInput = document.getElementById('background-color') as HTMLInputElement;
+          if (colorInput && colorInput.value !== savedColor) {
+            colorInput.value = savedColor;
+          }
+        }, 0);
+      }
+
+      toast({
+        title: "Saved successfully",
+        description: "Your changes have been saved.",
+      });
+    } catch (error) {
+      console.error('Error updating activity:', error);
+      toast({
+        title: "Error saving changes",
+        description: "Could not save your changes. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Function to update activity in the API with debounce
+  const debouncedUpdateActivity = React.useCallback(
+    (data: any) => {
+      if (!activity?.id) return;
+
+      setIsSaving(true);
+
+      // Clear any existing timeout
+      if (window.updateActivityTimer) {
+        clearTimeout(window.updateActivityTimer);
+      }
+
+      // Set a new timeout
+      window.updateActivityTimer = setTimeout(async () => {
+        try {
+          await updateActivity(data);
+        } finally {
+          setIsSaving(false);
+        }
+      }, 500); // 500ms debounce time
+    },
+    [activity, backgroundColor] // Add backgroundColor as dependency to capture its latest value
+  );
+
+  // Functions for updating basic fields
+  const handleTitleChange = (value: string) => {
+    setTitle(value);
+    // Update API silently without showing saving state
+    if (activity && value !== activity.title) {
+      updateActivitySilently({ title: value });
+    }
+  };
+
+  const handleDescriptionChange = (value: string) => {
+    setDescription(value);
+    // Update API silently without showing saving state
+    if (activity && value !== activity.description) {
+      updateActivitySilently({ description: value });
+    }
+  };
+
+  // Silent update without showing saving indicator
+  const updateActivitySilently = async (data: any) => {
+    if (!activity?.id) return;
+
+    try {
+      // Ensure we're sending the correct API payload shape
+      const payload = {
+        ...data,
+        // Make sure these fields match the API expected format
+        title: data.title !== undefined ? data.title : activity.title,
+        description: data.description !== undefined ? data.description : activity.description,
+        isPublished: data.isPublished !== undefined ? data.isPublished : activity.is_published,
+        backgroundColor: data.backgroundColor !== undefined ? data.backgroundColor : activity.backgroundColor,
+        backgroundImage: data.backgroundImage !== undefined ? data.backgroundImage : activity.backgroundImage,
+        customBackgroundMusic: data.customBackgroundMusic !== undefined ? data.customBackgroundMusic : activity.customBackgroundMusic
+      };
+
+      // Only send fields that are actually changing
+      const finalPayload = Object.keys(data).reduce((acc, key) => {
+        acc[key] = payload[key];
+        return acc;
+      }, {} as any);
+
+      console.log('Silently updating activity with payload:', finalPayload);
+      await activitiesApi.updateActivity(activity.id, finalPayload);
+
+      // No toast for silent updates
+    } catch (error) {
+      console.error('Error updating activity silently:', error);
+      // Only show toast for errors
+      toast({
+        title: "Error saving changes",
+        description: "Could not save your changes. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleIsPublishedChange = (checked: boolean) => {
+    setIsPublished(checked);
+    debouncedUpdateActivity({ isPublished: checked });
+  };
+
+  const handleBackgroundMusicChange = (value: string) => {
+    setCustomBackgroundMusic(value);
+    // Update API immediately
+    if (activity && value !== activity.customBackgroundMusic) {
+      debouncedUpdateActivity({ customBackgroundMusic: value });
+    }
+  };
+
   return (
     <Card className="border-none overflow-hidden shadow-md h-full w-full">
       <CardHeader className="px-4 py-2 flex flex-row items-center justify-between bg-white dark:bg-gray-950 border-b">
@@ -1297,11 +1402,11 @@ export function QuestionSettings({
               <div>
                 <h3 className="text-sm font-medium mb-2.5 text-gray-900 dark:text-white flex items-center gap-1.5">
                   <span className="inline-block w-1.5 h-1.5 bg-primary rounded-full"></span>
-                  {activeQuestion.question_type === 'slide' || activeQuestion.question_type === 'info_slide' ? "Slide Content" : "Answer Options"}
+                  {activeQuestion?.question_type === 'slide' || activeQuestion?.question_type === 'info_slide' ? "Slide Content" : "Answer Options"}
                 </h3>
 
                 {/* Display different content based on question type */}
-                {activeQuestion.question_type === 'multiple_choice' || activeQuestion.question_type === 'multiple_response' ? (
+                {activeQuestion?.question_type === 'multiple_choice' || activeQuestion?.question_type === 'multiple_response' ? (
                   <div className={cn(
                     "p-3 rounded-md border",
                     activeQuestion.question_type === 'multiple_choice'
@@ -1317,7 +1422,7 @@ export function QuestionSettings({
                       questionType={activeQuestion.question_type}
                     />
                   </div>
-                ) : activeQuestion.question_type === 'true_false' ? (
+                ) : activeQuestion?.question_type === 'true_false' ? (
                   <div className="p-3 bg-green-50 dark:bg-green-900/10 rounded-md border border-green-100 dark:border-green-800">
                     <TrueFalseSelector
                       options={activeQuestion.options}
@@ -1325,15 +1430,15 @@ export function QuestionSettings({
                       activeQuestionIndex={activeQuestionIndex}
                     />
                   </div>
-                ) : activeQuestion.question_type === 'text_answer' ? (
+                ) : activeQuestion?.question_type === 'text_answer' ? (
                   <TextAnswerForm
                     correctAnswerText={correctAnswerText}
                     onTextAnswerChange={handleTextAnswerChange}
                     onTextAnswerBlur={handleTextAnswerBlur}
                   />
-                ) : activeQuestion.question_type === 'slide' || activeQuestion.question_type === 'info_slide' ? (
+                ) : activeQuestion?.question_type === 'slide' || activeQuestion?.question_type === 'info_slide' ? (
                   <SlideSettings />
-                ) : activeQuestion.question_type === 'reorder' ? (
+                ) : activeQuestion?.question_type === 'reorder' ? (
                   <div className="p-3 bg-orange-50 dark:bg-orange-900/10 rounded-md border border-orange-100 dark:border-orange-800">
                     <ReorderOptions
                       options={activeQuestion.options}
@@ -1343,7 +1448,7 @@ export function QuestionSettings({
                       onReorder={onReorderOptions}
                     />
                   </div>
-                ) : activeQuestion.question_type === 'location' ? (
+                ) : activeQuestion?.question_type === 'location' ? (
                   <LocationSettings />
                 ) : null}
               </div>
