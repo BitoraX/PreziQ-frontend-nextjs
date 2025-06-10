@@ -31,7 +31,7 @@ export const AnimationOrderItem = ({
     marginLeft: `${item.displayOrder * 12}px`, // Thụt lề theo displayOrder
   };
 
-  console.log('itemmmmmmmmm', item);
+  // console.log('itemmmmmmmmm', item);
 
   return (
     <div

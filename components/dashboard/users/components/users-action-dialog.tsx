@@ -216,14 +216,6 @@ export function UsersActionDialog({ currentRow, open, onOpenChange }: Props) {
           changedFields.nickname = values.nickname;
         }
         if (avatarUrl !== currentRow.avatar) {
-          if (currentRow.avatar) {
-            try {
-              await storageApi.deleteSingleFile(currentRow.avatar);
-            } catch (error) {
-              console.error('Error deleting old avatar:', error);
-              // Tiếp tục cập nhật ngay cả khi xóa thất bại
-            }
-          }
           changedFields.avatar = avatarUrl;
         }
         if (values.birthDate !== currentRow.birthDate) {
@@ -275,6 +267,15 @@ export function UsersActionDialog({ currentRow, open, onOpenChange }: Props) {
         }
 
         await updateUser(currentRow.userId, changedFields);
+        
+        if (currentRow.avatar) {
+          try {
+            await storageApi.deleteSingleFile(currentRow.avatar);
+          } catch (error) {
+            console.error('Error deleting old avatar:', error);
+            // Tiếp tục cập nhật ngay cả khi xóa thất bại
+          }
+        }
       } else {
         const userData = {
           ...values,

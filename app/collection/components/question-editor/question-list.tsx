@@ -111,17 +111,39 @@ const SortableActivityItem = ({
     }
   };
 
+ const getBackgroundStyle = () => {
+   const style: React.CSSProperties = {};
+
+   if (activity.activity_type_id === 'INFO_SLIDE') {
+     // Chỉ áp dụng logic ưu tiên cho INFO_SLIDE
+     if (activity.backgroundImage) {
+       // Nếu có background image, ưu tiên hiển thị nó
+       style.backgroundImage = `url(${activity.backgroundImage})`;
+       style.backgroundSize = 'cover';
+       style.backgroundPosition = 'center';
+     } else {
+       // Nếu không có background image, sử dụng background color
+       style.backgroundColor = getBackgroundColor();
+     }
+   } else {
+     // Các activity type khác giữ nguyên logic cũ
+     style.backgroundColor = getBackgroundColor();
+     if (activity.backgroundImage) {
+       style.backgroundImage = `url(${activity.backgroundImage})`;
+       style.backgroundSize = 'cover';
+       style.backgroundPosition = 'center';
+     }
+   }
+
+   return style;
+ };
+
   return (
     <div
       ref={setNodeRef}
       style={{
         ...style,
-        backgroundImage: activity.backgroundImage
-          ? `url(${activity.backgroundImage})`
-          : undefined,
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-        backgroundColor: getBackgroundColor(),
+        ...getBackgroundStyle(),
       }}
       onClick={handleActivityClick}
       className={cn(
@@ -440,7 +462,7 @@ export function QuestionList({
           // Tìm question tương ứng với activity này
           return questions.find((q) => q.activity_id === activityId);
         })
-        .filter((q) => q !== undefined) as QuizQuestion[];
+        .filter((q) => q !== undefined) as QuizQuestion[]; 
 
       if (onReorderActivities) {
         // Gọi callback để component cha cập nhật UI trước khi API call hoàn thành
