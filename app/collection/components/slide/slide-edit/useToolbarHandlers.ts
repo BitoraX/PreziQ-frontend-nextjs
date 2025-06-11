@@ -22,7 +22,7 @@ export const ToolbarHandlers = (
     content?: string;
     slideElements: SlideElementPayload[];
   }) => void,
-  slideElementsRef: React.MutableRefObject<SlideElementPayload[]> = [],
+  slideElementsRef: React.MutableRefObject<SlideElementPayload[]> = { current: [] },
   currentTitle: string = '', // Pass current title
   currentContent: string = '' // Pass current content
 ) => {
@@ -66,8 +66,6 @@ export const ToolbarHandlers = (
       }
     }
 
-    console.log('updateTextboxElementttt', currentElement);
-
     const payload: SlideElementPayload = {
       positionX: (rawLeft / cw) * 100,
       positionY: (rawTop / ch) * 100,
@@ -105,7 +103,6 @@ export const ToolbarHandlers = (
     const canvas = image.canvas;
     if (!canvas) return;
 
-    console.log('UPDATEEEEEEEEEEEEEEEE');
 
     const zoom = canvas.getZoom();
     const cw = canvas.getWidth()! / zoom;
@@ -140,18 +137,13 @@ export const ToolbarHandlers = (
   }, 500);
 
   const addTextbox = async () => {
-    console.log('Bắt đầu addTextbox');
-    if (canvas.get('isCreating')) {
-      console.log('Bỏ qua addTextbox vì đang tạo');
-      return;
-    }
+    let textbox: fabric.Textbox | null = null; 
 
     try {
       canvas.set('isCreating', true);
-
       // Tạo textbox mới
       const defaultFontSizePercent = (20 / ORIGINAL_CANVAS_WIDTH) * 100;
-      const textbox = new fabric.Textbox('New Text', {
+      textbox = new fabric.Textbox('New Text', {
         left: 50,
         top: 250,
         fontSize: 20,
@@ -242,10 +234,10 @@ export const ToolbarHandlers = (
         })
       );
     } catch (err) {
-      console.error('Lỗi khi tạo text element:', err);
-      // Xóa textbox khỏi canvas nếu có lỗi
-      canvas.remove(textbox);
-      canvas.renderAll();
+      if (textbox) {
+        canvas.remove(textbox);
+        canvas.renderAll();
+      }
     } finally {
       canvas.set('isCreating', false);
     }
@@ -314,7 +306,10 @@ export const ToolbarHandlers = (
               })
             );
 
-            const updatedSlideElements = [...slideElementsRef.current, newElement];
+            const updatedSlideElements = [
+              ...slideElementsRef.current,
+              newElement,
+            ];
 
             if (onUpdate) {
               onUpdate({

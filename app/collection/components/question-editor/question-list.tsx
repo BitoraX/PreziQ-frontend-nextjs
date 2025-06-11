@@ -64,6 +64,7 @@ interface QuestionListProps {
   activities?: Activity[];
   onReorderActivities?: (newOrder: string[]) => void;
   onAddLocationQuestion?: (pointType?: string) => void;
+   slidesBackgrounds: Record<string, { backgroundImage: string; backgroundColor: string }>;
 }
 
 // Sortable Activity Item
@@ -188,6 +189,7 @@ export function QuestionList({
   activities = [],
   onReorderActivities,
   onAddLocationQuestion,
+  
 }: QuestionListProps) {
   const [internalIsCollapsed, setInternalIsCollapsed] = useState(false);
   const isCollapsed =

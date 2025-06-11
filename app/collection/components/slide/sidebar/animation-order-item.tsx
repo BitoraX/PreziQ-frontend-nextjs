@@ -23,7 +23,7 @@ export const AnimationOrderItem = ({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: item.slideElementId });
+  } = useSortable({ id: item.slideElementId || `temp-${Date.now()}` });
 
   const style = {
     transform: CSS.Transform.toString(transform),

@@ -63,7 +63,7 @@ export const SlideSettings: React.FC<SlideSettingsProps> = ({
   );
   const [customColor, setCustomColor] = useState(backgroundColor || '#FFFFFF');
   const { toast } = useToast();
-
+  const [currentBackgroundImage, setCurrentBackgroundImage] = useState(backgroundImage);
   // useEffect(() => {
   //   setCustomColor(backgroundColor || '#FFFFFF');
 
@@ -96,7 +96,7 @@ export const SlideSettings: React.FC<SlideSettingsProps> = ({
     }
   }, [slideId, backgroundColor, backgroundImage]);
 
-  console.log('BACKGROUND COLORRRR', backgroundColor, customColor);
+  console.log('BACKGROUND IMGGGGGGGGGG', currentBackgroundImage);
 
   const onBackgroundColorChange = async (color: string) => {
     setCustomColor(color);
@@ -138,14 +138,8 @@ export const SlideSettings: React.FC<SlideSettingsProps> = ({
   };
 
   const onBackgroundImageChange = async (url: string) => {
-    if (backgroundImage) {
-      try {
-        await storageApi.deleteSingleFile(backgroundImage);
-      } catch (error) {
-        console.error('Error deleting old background image:', error);
-        // Continue with the update even if delete fails
-      }
-    }
+    setCurrentBackgroundImage(url);
+    console.log('setCurrentBackgroundImage 22222', currentBackgroundImage);
 
     setCustomColor('');
     if (typeof window !== 'undefined' && window.savedBackgroundColors) {
@@ -224,6 +218,14 @@ export const SlideSettings: React.FC<SlideSettingsProps> = ({
     }
 
     try {
+      if (currentBackgroundImage) {
+        try {
+          await storageApi.deleteSingleFile(currentBackgroundImage);
+          console.log('XOA DUOC O DAY');
+        } catch (error) {
+          console.error('Error deleting old background image:', error);
+        }
+      }
       // Upload file to S3
       const response = await storageApi.uploadSingleFile(file, 'slides');
       const res = response.data as any;
@@ -232,6 +234,8 @@ export const SlideSettings: React.FC<SlideSettingsProps> = ({
       if (!fileUrl) {
         throw new Error('Invalid response: fileUrl not found');
       }
+      console.log('setCurrentBackgroundImage', fileUrl);
+      setCurrentBackgroundImage(fileUrl);
 
       // Update canvas and activity
       await onBackgroundImageChange(fileUrl);

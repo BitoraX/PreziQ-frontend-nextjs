@@ -20,7 +20,9 @@ interface UploadResponse {
 
 const extractRelativePath = (fullUrl: string): string => {
   // Extract everything after the S3 bucket name
+  console.log('fullUrl', fullUrl);
   const match = fullUrl.match(/[^/]+\/[^/]+$/);
+  console.log('match', match);
   return match ? match[0] : fullUrl;
 };
 

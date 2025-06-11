@@ -255,6 +255,8 @@ export function QuestionPreview({
         backgroundImage: backgroundData.backgroundImage,
       });
 
+      console.log('VUA GOI O DAY');
+
       // Cập nhật global storage
       if (typeof window !== 'undefined') {
         if (!window.savedBackgroundColors) window.savedBackgroundColors = {};
@@ -403,6 +405,7 @@ export function QuestionPreview({
       backgroundColor?: string;
     }
   ) => {
+    
     // Lưu vào global storage ngay lập tức để đảm bảo đồng bộ
     if (typeof window !== 'undefined' && properties.backgroundColor) {
       // Đảm bảo object đã được khởi tạo

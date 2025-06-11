@@ -1143,7 +1143,7 @@ export function QuestionSettings({
   );
 
   // Use debounced version for high-frequency updates like color changes
-  const handleBackgroundColorChange = (value: string) => {
+  const handleBackgroundColorChange = async (value: string) => {
     // Cập nhật UI ngay lập tức
     if (activity) {
       // Cập nhật trong state local trước
@@ -1645,7 +1645,7 @@ export function QuestionSettings({
         // Upload file
         const response = (await storageApi.uploadSingleFile(
           file,
-          'uploads'
+          'activities'
         )) as FileUploadResponse;
 
         clearInterval(progressInterval);

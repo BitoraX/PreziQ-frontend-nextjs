@@ -595,12 +595,6 @@ export default function QuestionsPageContent() {
       ...prev,
       [activityId]: elements,
     }));
-
-    console.log(
-      'Updated slide elements for activity 0000:',
-      activityId,
-      elements
-    );
   };
 
   useEffect(() => {

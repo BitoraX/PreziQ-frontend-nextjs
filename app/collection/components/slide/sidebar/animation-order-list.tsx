@@ -24,6 +24,7 @@
     PointerSensor,
     useSensor,
     useSensors,
+    UniqueIdentifier,
   } from '@dnd-kit/core';
   import {
     arrayMove,
@@ -33,7 +34,6 @@
   } from '@dnd-kit/sortable';
   import { AnimationOrderItem } from './animation-order-item';
   import type { SlideElementPayload } from '@/types/slideInterface';
-
   interface AnimationOrderListProps {
     slideElements: SlideElementPayload[] | undefined;
     onOrderChange: (updatedElements: SlideElementPayload[]) => void;
@@ -436,7 +436,9 @@
           onDragEnd={handleDragEnd}
         >
           <SortableContext
-            items={items.map((item) => item.slideElementId)}
+            items={items
+              .filter((item) => item.slideElementId)
+              .map((item) => item.slideElementId as UniqueIdentifier)}
             strategy={verticalListSortingStrategy}
           >
             <div className="space-y-2">

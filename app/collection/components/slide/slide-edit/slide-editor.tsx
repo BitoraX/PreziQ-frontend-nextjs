@@ -837,11 +837,6 @@ const FabricEditor: React.FC<FabricEditorProps> = ({
       const obj = e.target;
       if (!obj) return;
 
-      // console.log(
-      //   'Đối tượng vừa được thay đổi:',
-      //   JSON.stringify(obj.toJSON(), null, 2)
-      // );
-
       const isNew = obj.get('isNew');
       const isCreating = canvas.get('isCreating');
 
@@ -850,6 +845,19 @@ const FabricEditor: React.FC<FabricEditorProps> = ({
           obj.set('isNew', false);
         }
         return;
+      }
+
+      const elementId = obj.get('slideElementId');
+      if (elementId) {
+        elementInitialStates.current.set(elementId, {
+          opacity: obj.opacity,
+          left: obj.left,
+          top: obj.top,
+          scaleX: obj.scaleX,
+          scaleY: obj.scaleY,
+          angle: obj.angle,
+          rotation: obj.angle ?? 0,
+        });
       }
 
       updateSlideElement(obj);
@@ -861,6 +869,20 @@ const FabricEditor: React.FC<FabricEditorProps> = ({
       if (!obj || obj.type !== 'textbox') return;
 
       //console.log('Text changed:', obj.toJSON());
+
+      const elementId = obj.get('slideElementId');
+      if (elementId) {
+        elementInitialStates.current.set(elementId, {
+          opacity: obj.opacity,
+          left: obj.left,
+          top: obj.top,
+          scaleX: obj.scaleX,
+          scaleY: obj.scaleY,
+          angle: obj.angle,
+          rotation: obj.angle ?? 0,
+        });
+      }
+
       updateSlideElement(obj);
       saveState();
     });
@@ -1146,6 +1168,15 @@ const FabricEditor: React.FC<FabricEditorProps> = ({
             content: slideContent,
             slideElements: merged,
           });
+
+          window.dispatchEvent(
+            new CustomEvent('slide:element:created', {
+              detail: {
+                slideId,
+                element: newElement,
+              },
+            })
+          );
 
           // Thông báo thay đổi selection để cập nhật sidebar
           const event = new CustomEvent('fabric:selection-changed', {
